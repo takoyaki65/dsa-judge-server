@@ -13,3 +13,11 @@ rye add <package-name>
 ```bash
 rye sync
 ```
+
+＃ ローカル環境でテストする方法
+`rye sync`で`.venv`ディレクトリが作成されます。これを用いて、以下のコマンドを実行すると、
+ローカル環境でテストすることができます。
+
+```bash
+. .venv/bin/activate
+```
