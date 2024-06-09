@@ -7,7 +7,6 @@
 #   all-features: false
 #   with-sources: false
 
--e file:.
 annotated-types==0.7.0
     # via pydantic
 anyio==4.4.0
@@ -26,11 +25,9 @@ click==8.1.7
 dnspython==2.6.1
     # via email-validator
 docker==7.1.0
-    # via dsa-judge-server
 email-validator==2.1.1
     # via fastapi
 fastapi==0.111.0
-    # via dsa-judge-server
 fastapi-cli==0.0.4
     # via fastapi
 h11==0.14.0
@@ -58,7 +55,6 @@ mdurl==0.1.2
 orjson==3.10.3
     # via fastapi
 pydantic==2.7.3
-    # via dsa-judge-server
     # via fastapi
 pydantic-core==2.18.4
     # via pydantic
@@ -94,7 +90,6 @@ urllib3==2.2.1
     # via docker
     # via requests
 uvicorn==0.30.1
-    # via dsa-judge-server
     # via fastapi
 uvloop==0.19.0
     # via uvicorn
