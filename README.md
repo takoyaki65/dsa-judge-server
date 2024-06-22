@@ -126,5 +126,5 @@ JudgeサーバーのDockerソケットをホストマシンのDocker Engineに�
 
 https://speakerdeck.com/narupi/dockerkontenakarahosutofalserootwoqu-ruhua?slide=10
 
-対策としては、このJudgeサーバーのendpointにアクセス制限をかけることが考えられる。
-
+対策として、Judgeサーバーのエンドポイントを作らないようにし、DBサーバーに一方的に問い合わせる
+ようにしている。
