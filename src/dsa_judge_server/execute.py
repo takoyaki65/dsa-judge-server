@@ -103,7 +103,10 @@ class TaskMonitor:
         # 取得はdocker statsコマンドを使い、1msごとに取得する
         # 取得したメモリ使用量からmaxUsedMemoryを更新する
         self._monitoring = True
-        self._monitor_thread = threading.Thread(target=self.__monitor_memory_usage)
+        # TODO: docker statsは遅いので、/sys/fs/cgroupからメモリ使用量を取得する方法を検討する
+        self._monitor_thread = threading.Thread(
+            target=self.__monitor_memory_usage_by_docker_stats
+        )
         self._monitor_thread.start()
 
     def end(self):
@@ -117,7 +120,7 @@ class TaskMonitor:
     def get_used_memory_byte(self) -> int:
         return self.maxUsedMemory
 
-    def __monitor_memory_usage(self):
+    def __monitor_memory_usage_by_docker_stats(self):
         while self._monitoring:
             # docker statsコマンドを使ってコンテナのメモリ使用量を取得する
             result = subprocess.run(
@@ -137,12 +140,12 @@ class TaskMonitor:
             # この値をパースしてmaxUsedMemoryを更新する
             if result.returncode == 0:
                 mem_usage = result.stdout.strip()
-                used_memory = self.__parse_memory_usage(mem_usage)
+                used_memory = self.__parse_memory_usage_docker_stats(mem_usage)
                 if used_memory > self.maxUsedMemory:
                     self.maxUsedMemory = used_memory
-                time.sleep(0.001) # 1ms待つ
+                time.sleep(0.001)  # 1ms待つ
 
-    def __parse_memory_usage(self, mem_usage: str) -> int:
+    def __parse_memory_usage_docker_stats(self, mem_usage: str) -> int:
         # "1.23 GiB / 2.00 GiB" -> 1.23 -> 1.23 * 1024 * 1024 * 1024
         match = __MEM_USAGE_PATTERN.match(mem_usage)
         if match:
