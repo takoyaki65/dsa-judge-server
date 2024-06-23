@@ -165,6 +165,16 @@ class TaskMonitor:
         return 0
 
 
+@dataclass
+class TaskResult:
+    exitCode: int
+    stdout: str
+    stderr: str
+    time: int
+    memory: int
+    TLE: bool  # 制限時間を超えたかどうか
+
+
 # タスクの実行情報
 @dataclass
 class TaskInfo:
@@ -182,3 +192,68 @@ class TaskInfo:
     # cgroupParent: str  # cgroupの親ディレクトリ
     volumeMountInfo: list[VolumeMountInfo]  # ボリュームのマウント情報
     taskMonitor: TaskMonitor
+
+    # Dockerコンテナの作成
+    def __create(self) -> tuple[ContainerInfo, Error]:
+        # docker create ...
+        args = ["create"]
+
+        # enable interactive
+        args += ["-i"]
+
+        args += ["--init"]
+
+        # CPUの割り当て数
+        if self.cpus > 0:
+            args += [f"--cpus={self.cpus}"]
+
+        # メモリ制限
+        if self.memoryLimitMB > 0:
+            args += [f"--memory={self.memoryLimitMB}m"]
+            args += [f"--memory-swap={self.memoryLimitMB}m"]
+
+        # スタックサイズの制限
+        if self.stackLimitKB > 0:
+            args += ["--ulimit", f"stack={self.stackLimitKB}:{self.stackLimitKB}"]
+        
+        # プロセス数の制限
+        if self.pidsLimit > 0:
+            args += ["--pids-limit", str(self.pidsLimit)]
+
+        # ネットワークの有効化
+        if not self.enableNetwork:
+            args += ["--network", "none"]
+        
+        # ロギングドライバの有効化
+        if not self.enableLoggingDriver:
+            args += ["--log-driver", "none"]
+        
+        # 作業ディレクトリ
+        args += ["--workdir", self.workDir]
+
+        for volumeMountInfo in self.volumeMountInfo:
+            args += ["-v", f"{volumeMountInfo.volume.name}:{volumeMountInfo.path}"]
+        
+        # コンテナイメージ名
+        args += [self.name]
+
+        # コンテナ内で実行するコマンド
+        args += self.arguments
+
+        # Dockerコンテナの作成コマンド
+        cmd = ["docker"] + args
+
+        # Dockerコンテナの作成
+        containerID = ""
+        err = ""
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            containerID = result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            err = f"Failed to create container: {e}"
+
+        if err != "":
+            return ContainerInfo(""), Error(err)
+        
+        return ContainerInfo(containerID), Error("")
+
