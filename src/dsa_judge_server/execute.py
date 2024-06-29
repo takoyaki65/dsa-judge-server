@@ -11,10 +11,11 @@ import subprocess
 import threading
 from datetime import timedelta
 from dataclasses import dataclass
+from dataclasses import replace
 import time  # 実行時間の計測に使用
 import re
 from pathlib import Path
-import io
+from typing import Callable
 
 
 # エラーメッセージの型
@@ -65,6 +66,21 @@ class Volume:
 
         return Error(err)
 
+    def copyFile(self, srcInHost: str, dstInVolume: str) -> Error:
+        task = TaskInfo(
+            name="ubuntu",
+            volumeMountInfo=[VolumeMountInfo(path="/workdir", volume=self)],
+        )
+        ci, err = task.__create()
+        if err.message != "":
+            return err
+
+        dstInContainer = Path("/workdir") / Path(dstInVolume)
+        err = ci.copyFile(srcInHost, str(dstInContainer))
+
+        ci.remove()
+        return err
+
 
 # Dockerコンテナの管理クラス
 class ContainerInfo:
@@ -84,8 +100,24 @@ class ContainerInfo:
             subprocess.run(cmd, check=True)
         except subprocess.CalledProcessError as e:
             err = f"Failed to remove container: {e}"
-        
+
         return Error(err)
+
+    # ファイルのコピー
+    def copyFile(self, srcInHost: str, dstInContainer: str) -> Error:
+        args = ["cp", srcInHost, f"{self.containerID}:{dstInContainer}"]
+
+        cmd = ["docker"] + args
+
+        err = ""
+
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            err = f"Failed to copy file: {e}"
+
+        return Error(err)
+
 
 @dataclass
 class VolumeMountInfo:
@@ -358,7 +390,7 @@ class TaskInfo:
         if err.message != "":
             # コンテナの作成に失敗した場合
             return TaskResult(), err
-        
+
         result, err = self.__start(containerInfo)
 
         # コンテナの削除
@@ -367,5 +399,3 @@ class TaskInfo:
             err.message += "\n" + err2.message
 
         return result, err
-
-    
