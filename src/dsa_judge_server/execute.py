@@ -6,6 +6,7 @@
 * タスクの実行結果を格納するクラスTaskResult
 """
 
+# 外部定義モジュールのインポート
 import uuid
 import subprocess
 import threading
@@ -17,14 +18,8 @@ import re
 from pathlib import Path
 from typing import Callable
 
-
-# エラーメッセージの型
-class Error:
-    message: str  # エラーメッセージ
-
-    def __init__(self, message: str):
-        self.message = message
-
+# 内部定義モジュールのインポート
+from my_error import Error
 
 # Dockerボリュームの管理クラス
 class Volume:
