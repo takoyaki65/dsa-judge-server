@@ -13,6 +13,7 @@ from datetime import timedelta
 from dataclasses import dataclass
 import time  # 実行時間の計測に使用
 import re
+from pathlib import Path
 
 
 # エラーメッセージの型
@@ -105,7 +106,7 @@ class TaskMonitor:
         self._monitoring = True
         # TODO: docker statsは遅いので、/sys/fs/cgroupからメモリ使用量を取得する方法を検討する
         self._monitor_thread = threading.Thread(
-            target=self.__monitor_memory_usage_by_docker_stats
+            target=self.__monitor_memory_usage_by_cgroup
         )
         self._monitor_thread.start()
 
@@ -120,7 +121,7 @@ class TaskMonitor:
     def get_used_memory_byte(self) -> int:
         return self.maxUsedMemory
 
-    def __monitor_memory_usage_by_docker_stats(self):
+    def __monitor_memory_usage_by_docker_stats(self) -> None:
         while self._monitoring:
             # docker statsコマンドを使ってコンテナのメモリ使用量を取得する
             result = subprocess.run(
@@ -164,6 +165,24 @@ class TaskMonitor:
                 return int(value * 1024 * 1024 * 1024)
         return 0
 
+    def __monitor_memory_usage_by_cgroup(self) -> None:
+        # /sys/fs/cgroup/system.slice/docker-xxxxxx.scope/memory.current
+        # からメモリ使用量をバイト単位で取得する
+        cgroup_path = (
+            Path("/sys/fs/cgroup/system.slice/")
+            / f"docker-{self.containerInfo.containerID}.scope"
+            / "memory.current"
+        )
+        while self._monitoring:
+            try:
+                with cgroup_path.open("r") as f:
+                    mem_usage = int(f.read())
+                    if mem_usage > self.maxUsedMemory:
+                        self.maxUsedMemory = mem_usage
+            except FileNotFoundError:
+                pass
+            time.sleep(0.001)
+
 
 @dataclass
 class TaskResult:
@@ -178,7 +197,7 @@ class TaskResult:
 # タスクの実行情報
 @dataclass
 class TaskInfo:
-    name: str
+    name: str  # コンテナイメージ名
     arguments: list[str]
     timeout: timedelta
     cpus: int  # CPUの割り当て数
@@ -215,7 +234,7 @@ class TaskInfo:
         # スタックサイズの制限
         if self.stackLimitKB > 0:
             args += ["--ulimit", f"stack={self.stackLimitKB}:{self.stackLimitKB}"]
-        
+
         # プロセス数の制限
         if self.pidsLimit > 0:
             args += ["--pids-limit", str(self.pidsLimit)]
@@ -223,17 +242,17 @@ class TaskInfo:
         # ネットワークの有効化
         if not self.enableNetwork:
             args += ["--network", "none"]
-        
+
         # ロギングドライバの有効化
         if not self.enableLoggingDriver:
             args += ["--log-driver", "none"]
-        
+
         # 作業ディレクトリ
         args += ["--workdir", self.workDir]
 
         for volumeMountInfo in self.volumeMountInfo:
             args += ["-v", f"{volumeMountInfo.volume.name}:{volumeMountInfo.path}"]
-        
+
         # コンテナイメージ名
         args += [self.name]
 
@@ -254,6 +273,5 @@ class TaskInfo:
 
         if err != "":
             return ContainerInfo(""), Error(err)
-        
-        return ContainerInfo(containerID), Error("")
 
+        return ContainerInfo(containerID), Error("")
