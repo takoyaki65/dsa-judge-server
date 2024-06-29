@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import time  # 実行時間の計測に使用
 import re
 from pathlib import Path
+import io
 
 
 # エラーメッセージの型
@@ -189,8 +190,8 @@ class TaskResult:
     exitCode: int
     stdout: str
     stderr: str
-    time: int
-    memory: int
+    timeMS: int
+    memoryByte: int
     TLE: bool  # 制限時間を超えたかどうか
 
 
@@ -211,6 +212,10 @@ class TaskInfo:
     # cgroupParent: str  # cgroupの親ディレクトリ
     volumeMountInfo: list[VolumeMountInfo]  # ボリュームのマウント情報
     taskMonitor: TaskMonitor
+
+    Stdin: str  # 標準入力
+    Stdout: str  # 標準出力
+    Stderr: str  # 標準エラー出力
 
     # Dockerコンテナの作成
     def __create(self) -> tuple[ContainerInfo, Error]:
@@ -275,3 +280,60 @@ class TaskInfo:
             return ContainerInfo(""), Error(err)
 
         return ContainerInfo(containerID), Error("")
+
+    # docker start ... を実行して、コンテナを起動する。
+    # これにより、docker createで指定したコマンド(コンパイル、プログラムの実行等)が実行される。
+    def __start(self, containerInfo: ContainerInfo) -> tuple[TaskResult, Error]:
+        # docker start
+        args = ["start"]
+
+        # enable interactive
+        args += ["-i"]
+
+        # コンテナID
+        args += [containerInfo.containerID]
+
+        # Dockerコンテナの起動コマンド
+        cmd = ["docker"] + args
+
+        # self.timeout + 500msの制限時間を設定
+        timeout = 100.0  # デフォルトは100秒
+        if self.timeout != timedelta(0):
+            timeout = self.timeout.total_seconds() + 0.5
+
+        # モニターを開始
+        self.taskMonitor.start()
+
+        # Dockerコンテナの起動
+        ProcessResult = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            input=self.Stdin,
+            check=False,
+        )
+
+        # モニターを終了
+        self.taskMonitor.end()
+
+        self.Stdout = ProcessResult.stdout
+        self.Stderr = ProcessResult.stderr
+
+        # タイムアウトしたかどうか
+        TLE = False
+        if (
+            self.timeout != timedelta(0)
+            and self.timeout.total_seconds()
+            < self.taskMonitor.get_elapsed_time_ms() / 1000
+        ):
+            TLE = True
+
+        return TaskResult(
+            exitCode=ProcessResult.returncode,
+            stdout=self.Stdout,
+            stderr=self.Stderr,
+            timeMS=int(self.taskMonitor.get_elapsed_time_ms()),
+            memoryByte=self.taskMonitor.get_used_memory_byte(),
+            TLE=TLE,
+        ), Error("")
