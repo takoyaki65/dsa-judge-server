@@ -399,7 +399,7 @@ class TaskInfo:
 
         return result, err
 
-def inspectExitCode(containerId: str) -> int, Error:
+def inspectExitCode(containerId: str) -> tuple[int, Error]:
     args = ["inspect", "--format={{.State.ExitCode}}", containerId]
 
     cmd = ["docker"] + args
