@@ -73,6 +73,19 @@ class ContainerInfo:
     def __init__(self, containerID: str):
         self.containerID = containerID
 
+    def remove(self) -> Error:
+        args = ["container", "rm", str(self.containerID)]
+
+        cmd = ["docker"] + args
+
+        err = ""
+
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            err = f"Failed to remove container: {e}"
+        
+        return Error(err)
 
 @dataclass
 class VolumeMountInfo:
@@ -337,3 +350,22 @@ class TaskInfo:
             memoryByte=self.taskMonitor.get_used_memory_byte(),
             TLE=TLE,
         ), Error("")
+
+    def run(self) -> tuple[TaskResult, Error]:
+        # コンテナ作成から起動までの処理を行う
+        # 途中で失敗したら、作成したコンテナの削除を行い、エラーを返す
+        containerInfo, err = self.__create()
+        if err.message != "":
+            # コンテナの作成に失敗した場合
+            return TaskResult(), err
+        
+        result, err = self.__start(containerInfo)
+
+        # コンテナの削除
+        err2 = containerInfo.remove()
+        if err2.message != "":
+            err.message += "\n" + err2.message
+
+        return result, err
+
+    
