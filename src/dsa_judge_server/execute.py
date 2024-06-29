@@ -374,8 +374,12 @@ class TaskInfo:
         ):
             TLE = True
 
+        exit_code, err = inspectExitCode(containerId=containerInfo.containerID)
+        if err.message != "":
+            return TaskResult(), err
+
         return TaskResult(
-            exitCode=ProcessResult.returncode,
+            exitCode=exit_code,
             stdout=self.Stdout,
             stderr=self.Stderr,
             timeMS=int(self.taskMonitor.get_elapsed_time_ms()),
@@ -399,3 +403,17 @@ class TaskInfo:
             err.message += "\n" + err2.message
 
         return result, err
+
+def inspectExitCode(containerId: str) -> int, Error:
+    args = ["inspect", "--format={{.State.ExitCode}}", containerId]
+
+    cmd = ["docker"] + args
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    err = ""
+    if result.returncode != 0:
+        err = f"Failed to inspect exit code: {result.stderr}"
+        return -1, Error(err)
+    
+    return int(result.stdout), Error(err)
