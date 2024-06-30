@@ -1,2 +1,2 @@
-def hello() -> str:
-    return "Hello from dsa-judge-server!"
+from .execute import *
+from .my_error import *

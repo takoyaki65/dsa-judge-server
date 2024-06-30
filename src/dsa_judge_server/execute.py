@@ -11,7 +11,7 @@ import uuid
 import subprocess
 import threading
 from datetime import timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dataclasses import replace
 import time  # 実行時間の計測に使用
 import re
@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Callable
 
 # 内部定義モジュールのインポート
-from my_error import Error
+from .my_error import Error
+
 
 # Dockerボリュームの管理クラス
 class Volume:
@@ -227,35 +228,39 @@ class TaskMonitor:
 
 @dataclass
 class TaskResult:
-    exitCode: int
-    stdout: str
-    stderr: str
-    timeMS: int
-    memoryByte: int
-    TLE: bool  # 制限時間を超えたかどうか
+    exitCode: int = -1
+    stdout: str = ""
+    stderr: str = ""
+    timeMS: int = -1
+    memoryByte: int = -1
+    TLE: bool = True  # 制限時間を超えたかどうか
 
 
 # タスクの実行情報
 @dataclass
 class TaskInfo:
     name: str  # コンテナイメージ名
-    arguments: list[str]
-    timeout: timedelta
-    cpus: int  # CPUの割り当て数
-    memoryLimitMB: int
-    stackLimitKB: int  # リカージョンの深さを制限
-    pidsLimit: int  # プロセス数の制限
-    enableNetwork: bool
-    enableLoggingDriver: bool
-    workDir: str  # コンテナ内での作業ディレクトリ
+    arguments: list[str] = field(default_factory=list)  # コンテナ内で実行するコマンド
+    timeout: timedelta = timedelta(0)  # タイムアウト時間
+    cpus: int = 0  # CPUの割り当て数
+    memoryLimitMB: int = 0  # メモリ制限
+    stackLimitKB: int = 0  # リカージョンの深さを制限
+    pidsLimit: int = 0  # プロセス数の制限
+    enableNetwork: bool = False
+    enableLoggingDriver: bool = True
+    workDir: str = "/workdir/"  # コンテナ内での作業ディレクトリ
     # cgroupをいじるにはroot権限が必要なので、現状は使わない
     # cgroupParent: str  # cgroupの親ディレクトリ
-    volumeMountInfo: list[VolumeMountInfo]  # ボリュームのマウント情報
-    taskMonitor: TaskMonitor
+    volumeMountInfo: list[VolumeMountInfo] = field(
+        default_factory=list
+    )  # ボリュームのマウント情報
+    taskMonitor: TaskMonitor = field(
+        default_factory=lambda: TaskMonitor(ContainerInfo(""))
+    )
 
-    Stdin: str  # 標準入力
-    Stdout: str  # 標準出力
-    Stderr: str  # 標準エラー出力
+    Stdin: str = ""  # 標準入力
+    Stdout: str = ""  # 標準出力
+    Stderr: str = ""  # 標準エラー出力
 
     # Dockerコンテナの作成
     def __create(self) -> tuple[ContainerInfo, Error]:
@@ -318,6 +323,9 @@ class TaskInfo:
 
         if err != "":
             return ContainerInfo(""), Error(err)
+
+        # モニターにコンテナ情報を設定
+        self.taskMonitor.containerInfo = ContainerInfo(containerID)
 
         return ContainerInfo(containerID), Error("")
 
@@ -399,6 +407,7 @@ class TaskInfo:
 
         return result, err
 
+
 def inspectExitCode(containerId: str) -> tuple[int, Error]:
     args = ["inspect", "--format={{.State.ExitCode}}", containerId]
 
@@ -410,5 +419,5 @@ def inspectExitCode(containerId: str) -> tuple[int, Error]:
     if result.returncode != 0:
         err = f"Failed to inspect exit code: {result.stderr}"
         return -1, Error(err)
-    
+
     return int(result.stdout), Error(err)
