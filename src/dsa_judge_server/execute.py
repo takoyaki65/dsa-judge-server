@@ -17,9 +17,14 @@ import time  # 実行時間の計測に使用
 import re
 from pathlib import Path
 from typing import Callable
+import logging
 
 # 内部定義モジュールのインポート
 from .my_error import Error
+
+# ロガーの設定
+logging.basicConfig(level=logging.INFO)
+test_logger = logging.getLogger(__name__)
 
 
 # Dockerボリュームの管理クラス
@@ -91,6 +96,8 @@ class ContainerInfo:
         cmd = ["docker"] + args
 
         err = ""
+
+        test_logger.info(f"remove container command: {cmd}")
 
         try:
             subprocess.run(cmd, check=True)
@@ -179,6 +186,9 @@ class TaskMonitor:
                 text=True,
                 check=False,
             )
+
+            test_logger.info(f"docker stats: {result.stdout}")
+
             # result.stdout = "1.23GiB / 2.00GiB"といった形式でメモリ使用量が取得できる
             # この値をパースしてmaxUsedMemoryを更新する
             if result.returncode == 0:
@@ -312,6 +322,8 @@ class TaskInfo:
         # Dockerコンテナの作成コマンド
         cmd = ["docker"] + args
 
+        test_logger.info(f"docker create command: {cmd}")
+
         # Dockerコンテナの作成
         containerID = ""
         err = ""
@@ -320,6 +332,8 @@ class TaskInfo:
             containerID = result.stdout.strip()
         except subprocess.CalledProcessError as e:
             err = f"Failed to create container: {e}"
+
+        test_logger.info(f'containerID: {containerID}, err: "{err}"')
 
         if err != "":
             return ContainerInfo(""), Error(err)
@@ -343,6 +357,8 @@ class TaskInfo:
 
         # Dockerコンテナの起動コマンド
         cmd = ["docker"] + args
+
+        test_logger.info(f"docker start command: {cmd}")
 
         # self.timeout + 500msの制限時間を設定
         timeout = 100.0  # デフォルトは100秒
@@ -414,6 +430,8 @@ def inspectExitCode(containerId: str) -> tuple[int, Error]:
     cmd = ["docker"] + args
 
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    test_logger.info(f"inspect exit code: {result}")
 
     err = ""
     if result.returncode != 0:
