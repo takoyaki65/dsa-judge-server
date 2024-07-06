@@ -1,13 +1,28 @@
+# テストプログラム実行方法
+# $ cd src
+# $ pytest --log-cli-level=INFO test_execute.py
 import pytest
 import dsa_judge_server
+from dsa_judge_server.execute import TaskInfo
+from dsa_judge_server.execute import Volume
+from dsa_judge_server.execute import VolumeMountInfo
 import logging
+from datetime import timedelta
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)
 test_logger = logging.getLogger(__name__)
 
+
 def test_RunHelloWorld():
-    task = dsa_judge_server.execute.TaskInfo("ubuntu", ["echo", "Hello, World!"])
+    task = TaskInfo(
+        name="ubuntu", arguments=["echo", "Hello, World!"],
+        timeout=timedelta(seconds=5),
+        memoryLimitMB=256,
+        cpus=1,
+    )
 
     result, err = task.run()
 
@@ -21,3 +36,48 @@ def test_RunHelloWorld():
     assert result.stdout == "Hello, World!\n"
 
     assert result.stderr == ""
+
+
+def test_CopyFileFromHostToVolume():
+    # ファイル転送先のボリュームの作成
+    volume, err = Volume.create()
+
+    assert err.message == ""
+
+    # tempdir にファイルを作成
+    with TemporaryDirectory() as tempdir:
+        with open(Path(tempdir) / "test.txt", "w") as f:
+            f.write("Hello, World!")
+        
+        # ファイルをボリュームにコピー
+        volume.copyFile(str(Path(tempdir) / "test.txt"), "test.txt") 
+
+    # ファイルがコピーされたことを確認
+    task = TaskInfo(
+        name="ubuntu", arguments=["cat", "test.txt"],
+        workDir="/workdir/",
+        volumeMountInfo=[
+            VolumeMountInfo(
+                path="/workdir/",
+                volume=volume
+            )
+        ]
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+
+    assert err.message == ""
+
+    assert result.exitCode == 0
+
+    assert result.stdout == "Hello, World!"
+
+    assert result.stderr == ""
+
+    err = volume.remove()
+
+    assert err.message == ""
+
+

@@ -52,6 +52,8 @@ class Volume:
 
         if err != "":
             return Volume(""), Error(err)
+        
+        test_logger.info(f"volumeName: {volumeName}")
         return Volume(volumeName), Error("")
 
     def remove(self) -> Error:
@@ -68,11 +70,12 @@ class Volume:
         return Error(err)
 
     def copyFile(self, srcInHost: str, dstInVolume: str) -> Error:
-        task = TaskInfo(
-            name="ubuntu",
-            volumeMountInfo=[VolumeMountInfo(path="/workdir", volume=self)],
-        )
-        ci, err = task.__create()
+        ci = ContainerInfo("")
+
+        err = ci.create(containerName="ubuntu",
+                        arguments=["echo", "Hello, World!"],
+                        workDir="/workdir/",
+                        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=self)])
         if err.message != "":
             return err
 
@@ -83,12 +86,100 @@ class Volume:
         return err
 
 
+@dataclass
+class VolumeMountInfo:
+    path: str  # コンテナ内のマウント先のパス
+    volume: Volume  # マウントするボリュームの情報
+
+
 # Dockerコンテナの管理クラス
 class ContainerInfo:
     containerID: str  # コンテナID
 
     def __init__(self, containerID: str):
         self.containerID = containerID
+
+    # Dockerコンテナの作成
+    def create(
+        self,
+        containerName: str,
+        arguments: list[str],
+        cpus: int = -1,
+        memoryLimitMB: int = -1,
+        stackLimitKB: int = -1,
+        pidsLimit: int = -1,
+        enableNetwork: bool = False,
+        enableLoggingDriver: bool = True,
+        workDir: str = "/workdir/",
+        volumeMountInfo: list[VolumeMountInfo] = None,
+    ) -> Error:
+        # docker create ...
+        args = ["create"]
+
+        # enable interactive
+        args += ["-i"]
+
+        args += ["--init"]
+
+        # CPUの割り当て数
+        if cpus > 0:
+            args += [f"--cpus={cpus}"]
+
+        # メモリ制限
+        if memoryLimitMB > 0:
+            args += [f"--memory={memoryLimitMB}m"]
+            args += [f"--memory-swap={memoryLimitMB}m"]
+
+        # スタックサイズの制限
+        if stackLimitKB > 0:
+            args += ["--ulimit", f"stack={stackLimitKB}:{stackLimitKB}"]
+
+        # プロセス数の制限
+        if pidsLimit > 0:
+            args += ["--pids-limit", str(pidsLimit)]
+
+        # ネットワークの有効化
+        if not enableNetwork:
+            args += ["--network", "none"]
+
+        # ロギングドライバの有効化
+        if not enableLoggingDriver:
+            args += ["--log-driver", "none"]
+
+        # 作業ディレクトリ
+        args += ["--workdir", workDir]
+
+        for volumeMountInfo in volumeMountInfo:
+            args += ["-v", f"{volumeMountInfo.volume.name}:{volumeMountInfo.path}"]
+
+        # コンテナイメージ名
+        args += [containerName]
+
+        # コンテナ内で実行するコマンド
+        args += arguments
+
+        # Dockerコンテナの作成コマンド
+        cmd = ["docker"] + args
+
+        test_logger.info(f"docker create command: {cmd}")
+
+        # Dockerコンテナの作成
+        containerID = ""
+        err = ""
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            containerID = result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            err = f"Failed to create container: {e}"
+
+        test_logger.info(f'containerID: {containerID}, err: "{err}"')
+
+        if err != "":
+            return Error(err)
+
+        self.containerID = containerID
+
+        return Error("")
 
     def remove(self) -> Error:
         args = ["container", "rm", str(self.containerID)]
@@ -120,12 +211,6 @@ class ContainerInfo:
             err = f"Failed to copy file: {e}"
 
         return Error(err)
-
-
-@dataclass
-class VolumeMountInfo:
-    path: str  # コンテナ内のマウント先のパス
-    volume: Volume  # マウントするボリュームの情報
 
 
 __MEM_USAGE_PATTERN = re.compile(r"^(\d+(\.\d+)?)([KMG]i?)B")
@@ -275,73 +360,31 @@ class TaskInfo:
     # Dockerコンテナの作成
     def __create(self) -> tuple[ContainerInfo, Error]:
         # docker create ...
-        args = ["create"]
+        containerInfo = ContainerInfo("")
 
-        # enable interactive
-        args += ["-i"]
-
-        args += ["--init"]
-
-        # CPUの割り当て数
-        if self.cpus > 0:
-            args += [f"--cpus={self.cpus}"]
-
-        # メモリ制限
-        if self.memoryLimitMB > 0:
-            args += [f"--memory={self.memoryLimitMB}m"]
-            args += [f"--memory-swap={self.memoryLimitMB}m"]
-
-        # スタックサイズの制限
-        if self.stackLimitKB > 0:
-            args += ["--ulimit", f"stack={self.stackLimitKB}:{self.stackLimitKB}"]
-
-        # プロセス数の制限
-        if self.pidsLimit > 0:
-            args += ["--pids-limit", str(self.pidsLimit)]
-
-        # ネットワークの有効化
-        if not self.enableNetwork:
-            args += ["--network", "none"]
-
-        # ロギングドライバの有効化
-        if not self.enableLoggingDriver:
-            args += ["--log-driver", "none"]
-
-        # 作業ディレクトリ
-        args += ["--workdir", self.workDir]
-
-        for volumeMountInfo in self.volumeMountInfo:
-            args += ["-v", f"{volumeMountInfo.volume.name}:{volumeMountInfo.path}"]
-
-        # コンテナイメージ名
-        args += [self.name]
-
-        # コンテナ内で実行するコマンド
-        args += self.arguments
-
-        # Dockerコンテナの作成コマンド
-        cmd = ["docker"] + args
-
-        test_logger.info(f"docker create command: {cmd}")
+        err = containerInfo.create(
+            containerName=self.name,
+            arguments=self.arguments,
+            cpus=self.cpus,
+            memoryLimitMB=self.memoryLimitMB,
+            stackLimitKB=self.stackLimitKB,
+            pidsLimit=self.pidsLimit,
+            enableNetwork=self.enableNetwork,
+            enableLoggingDriver=self.enableLoggingDriver,
+            workDir=self.workDir,
+            volumeMountInfo=self.volumeMountInfo,
+        )
 
         # Dockerコンテナの作成
-        containerID = ""
-        err = ""
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            containerID = result.stdout.strip()
-        except subprocess.CalledProcessError as e:
-            err = f"Failed to create container: {e}"
+        test_logger.info(f'containerID: {containerInfo.containerID}, err: "{err.message}"')
 
-        test_logger.info(f'containerID: {containerID}, err: "{err}"')
-
-        if err != "":
-            return ContainerInfo(""), Error(err)
+        if err.message != "":
+            return ContainerInfo(""), err
 
         # モニターにコンテナ情報を設定
-        self.taskMonitor.containerInfo = ContainerInfo(containerID)
+        self.taskMonitor.containerInfo = containerInfo
 
-        return ContainerInfo(containerID), Error("")
+        return containerInfo, Error("")
 
     # docker start ... を実行して、コンテナを起動する。
     # これにより、docker createで指定したコマンド(コンパイル、プログラムの実行等)が実行される。
@@ -410,10 +453,13 @@ class TaskInfo:
         # コンテナ作成から起動までの処理を行う
         # 途中で失敗したら、作成したコンテナの削除を行い、エラーを返す
         containerInfo, err = self.__create()
+        test_logger.info(f"containerID: {containerInfo.containerID}, err: \"{err.message}\"")
         if err.message != "":
             # コンテナの作成に失敗した場合
             return TaskResult(), err
+        test_logger.info(f"containerID: {containerInfo.containerID}")
 
+        test_logger.info("start container")
         result, err = self.__start(containerInfo)
 
         # コンテナの削除
