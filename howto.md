@@ -15,9 +15,12 @@ rye sync
 ```
 
 ＃ ローカル環境でテストする方法
-`rye sync`で`.venv`ディレクトリが作成されます。これを用いて、以下のコマンドを実行すると、
-ローカル環境でテストすることができます。
+まず、``langs/``フォルダにあるDockerfileを元に、sandbox用のDockerイメージを生成します。
 
 ```bash
-. .venv/bin/activate
+cd langs/
+sudo ./build.sh
 ```
+
+# 注意
+* DBテーブルのスキーマ(`db/init.sql`)の変更などを行う場合、古いDBデータのボリュームを削除しないとその変更が反映されない。
