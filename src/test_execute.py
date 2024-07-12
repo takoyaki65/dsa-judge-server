@@ -2,10 +2,10 @@
 # $ cd src
 # $ pytest --log-cli-level=INFO test_execute.py
 import pytest
-import dsa_judge_server
-from dsa_judge_server.execute import TaskInfo
-from dsa_judge_server.execute import Volume
-from dsa_judge_server.execute import VolumeMountInfo
+import sandbox_execution
+from sandbox_execution.execute import TaskInfo
+from sandbox_execution.execute import Volume
+from sandbox_execution.execute import VolumeMountInfo
 import logging
 from datetime import timedelta
 from tempfile import TemporaryDirectory
