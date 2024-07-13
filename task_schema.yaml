@@ -1,0 +1,54 @@
+type: object
+properties:
+  source:
+    type: string
+    description: ソースファイルのパス
+  language:
+    type: string
+    description: プログラミング言語
+  build:
+    type: string
+    description: ビルドコマンド
+  program:
+    type: string
+    description: 実行ファイル名
+  args:
+    type: array
+    items:
+      type: string
+    description: プログラム実行時の引数
+  timeMs:
+    type: integer
+    description: 実行時間制限(ms)
+  memoryMB:
+    type: integer
+    description: メモリ使用量制限(MB)
+  testcases:
+    type: array
+    items:
+      type: object
+      properties:
+        input:
+          type: string
+          description: 入力ファイルのパス
+        output:
+          type: string
+          description: 期待される出力ファイルのパス
+        error:
+          type: string
+          description: 期待されるエラーファイルのパス
+        checker:
+          type: string
+          description: 出力を検証するためのチェッカー
+        exitCode:
+          type: integer
+          description: 期待される終了コード
+required:
+  - source
+  - language
+  - build
+  - program
+  - args
+  - timeMs
+  - memoryMB
+  - testcases

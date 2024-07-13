@@ -1,0 +1,13 @@
+source: "helloworld.c"
+language: "c"
+build: "gcc -o helloworld helloworld.c"
+program: "helloworld"
+args: []
+timeMs: 1000
+memoryMB: 256
+
+testcases:
+  - input: "test0.in"
+    output: "test0.out"
+    checker: "exact"
+    exitCode: 0
