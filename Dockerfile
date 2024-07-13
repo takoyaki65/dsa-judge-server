@@ -24,11 +24,12 @@ RUN apt-get install docker-ce-cli -y
 
 # 必要なPythonライブラリのインストール
 # (pyproject.tomlからryeによって自動生成されたrequirements.lockを使用)
-COPY requirements.lock .
-RUN PYTHONDONTWRITEBYTECODE=1 pip install --no-cache-dir -r requirements.lock
+# 参考: https://rye.astral.sh/guide/docker/
+COPY requirements.lock requirements/requirements.lock
+RUN PYTHONDONTWRITEBYTECODE=1 pip install --no-cache-dir -r requirements/requirements.lock
 
 # アプリケーションのソースコードをコピー
-COPY src/ .
+# COPY src/ .
 
 # FastAPIアプリケーションの起動
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
