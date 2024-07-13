@@ -7,7 +7,8 @@ def fetch_task_by_id(db: Session, task_id: int) -> models.Task | None:
     return db.query(models.Task).filter(models.Task.id == task_id).first()
 
 def fetch_pending_task_and_update_to_processing(db: Session, limit: int = 1) -> list[models.Task]:
-    task = db.query(models.Task).filter(models.Task.status == 'pending').limit(limit).all()
+    # 他のワーカが同じタスクを取得しないように、with_for_update()を使ってロックをかける
+    task = db.query(models.Task).filter(models.Task.status == 'pending').limit(limit).with_for_update().all()
     for t in task:
         t.status = 'processing'
     db.commit()
