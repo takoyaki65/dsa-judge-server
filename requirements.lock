@@ -18,11 +18,14 @@ certifi==2024.6.2
     # via httpcore
     # via httpx
     # via requests
+cffi==1.16.0
+    # via cryptography
 charset-normalizer==3.3.2
     # via requests
 click==8.1.7
     # via typer
     # via uvicorn
+cryptography==42.0.8
 dnspython==2.6.1
     # via email-validator
 docker==7.1.0
@@ -63,6 +66,8 @@ packaging==24.1
     # via pytest
 pluggy==1.5.0
     # via pytest
+pycparser==2.22
+    # via cffi
 pydantic==2.7.3
     # via fastapi
 pydantic-core==2.18.4
