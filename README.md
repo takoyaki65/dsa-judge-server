@@ -24,10 +24,9 @@
     * 想定される標準出力のファイルの相対パス (e.g., `test00.out`)
     * 想定される標準エラー出力のファイルの相対パス (e.g., `test00.err`)
     * 出力のチェッカー
-      * `standard`: 標準出力と想定される出力が完全に一致すること(**最初はこれだけ実装**)
-      * `easy`: 標準出力と想定される出力が完全に一致すること。ただし、空白・改行文字は無視する
-      * ``[`float`, precision]``: 標準出力と想定される出力が完全に一致すること。ただし、浮動小数点数の比較を行い、その誤差が`precision`以下であること
-      * ``[`line`, `checker`]``: 各行について、`checker`でチェックを行う
+      * `exact`: 標準出力と想定される出力が完全に一致すること(**最初はこれだけ実装**)
+      * `ignore_whitespace`: 標準出力と想定される出力が完全に一致すること。ただし、余分な空白文字・末尾の改行文字の有無は無視する
+      * `path/to/custome_checker.py`: カスタムチェッカーの相対パス(`task.yaml`から見て)。`python3 process_output.txt judge_answer.txt`で実行でき、`AC`か`WA`か出力するpythonコード。
     * 想定される終了コード (e.g., 0)
 ```yaml
 source: "src/main.c"
@@ -41,12 +40,12 @@ testcases:
   - input: "test00.in"
     output: "test00.out"
     error: "test00.err"
-    checker: "standard"
+    checker: "exact"
     exitCode: 0
   - input: "test01.in"
     output: "test01.out"
     error: "test01.err"
-    checker: "easy"
+    checker: "ignore_whitespace"
     exitCode: 0
 ```
 
@@ -67,7 +66,7 @@ result:
   * `status`: タスクの状態。`running`, `completed`のいずれか
   * `progress`: タスクの進捗度。0.0から1.0の間の実数
   * `result`: テストケースごとの結果。テストケースのエントリがキーである。テストケースの結果は以下のような形式である。
-    * `status`: テストケースの結果。`AC`, `WA`, `RE`, `TLE`, `MLE`のいずれか
+    * `status`: テストケースの結果。`AC`(正解), `WA`(不正解), `RE`(実行時エラー), `TLE`(時間超過), `MLE`(メモリー超過)のいずれか
     * `timeMs`: 実行時間 (ms)
     * `memoryMB`: メモリ消費量 (MB)
     * `stdout`: 標準出力
