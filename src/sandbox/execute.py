@@ -69,21 +69,47 @@ class Volume:
 
         return Error(err)
 
-    def copyFile(self, srcInHost: str, dstInVolume: str) -> Error:
+    def copyFile(self, filePathFromClient: str, filePathInVolume: str) -> Error:
         ci = ContainerInfo("")
 
-        err = ci.create(containerName="ubuntu",
-                        arguments=["echo", "Hello, World!"],
-                        workDir="/workdir/",
-                        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=self)])
+        err = ci.create(
+            containerName="ubuntu",
+            arguments=["echo", "Hello, World!"],
+            workDir="/workdir/",
+            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=self)],
+        )
         if err.message != "":
             return err
 
-        dstInContainer = Path("/workdir") / Path(dstInVolume)
-        err = ci.copyFile(srcInHost, str(dstInContainer))
+        dstInContainer = Path("/workdir") / Path(filePathInVolume)
+        err = ci.copyFile(filePathFromClient, str(dstInContainer))
 
         ci.remove()
         return err
+
+    def copyFiles(self, filePathsFromClient: list[str], DirPathInVolume: str) -> Error:
+        ci = ContainerInfo("")
+
+        err = ci.create(
+            containerName="ubuntu",
+            arguments=["echo", "Hello, World!"],
+            workDir="/workdir/",
+            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=self)],
+        )
+
+        if err.message != "":
+            return err
+
+        for PathInClient in filePathsFromClient:
+            dstInContainer = (
+                Path("/workdir") / Path(DirPathInVolume) / Path(PathInClient).name
+            )
+            err = ci.copyFile(PathInClient, str(dstInContainer))
+            if err.message != "":
+                return err
+
+        ci.remove()
+        return Error("")
 
 
 @dataclass
@@ -376,7 +402,9 @@ class TaskInfo:
         )
 
         # Dockerコンテナの作成
-        test_logger.info(f'containerID: {containerInfo.containerID}, err: "{err.message}"')
+        test_logger.info(
+            f'containerID: {containerInfo.containerID}, err: "{err.message}"'
+        )
 
         if err.message != "":
             return ContainerInfo(""), err
@@ -453,7 +481,9 @@ class TaskInfo:
         # コンテナ作成から起動までの処理を行う
         # 途中で失敗したら、作成したコンテナの削除を行い、エラーを返す
         containerInfo, err = self.__create()
-        test_logger.info(f"containerID: {containerInfo.containerID}, err: \"{err.message}\"")
+        test_logger.info(
+            f'containerID: {containerInfo.containerID}, err: "{err.message}"'
+        )
         if err.message != "":
             # コンテナの作成に失敗した場合
             return TaskResult(), err

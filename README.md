@@ -12,7 +12,7 @@
   * その他のファイル: ソースコード、テストケースなど
 
 * `task.yaml`には、実行すべきジョブの情報が記録されている。ジョブの情報とは、以下のようなものである。なお、実行するプログラムは一つで、引数は固定であるとする。
-  * ソースコードの相対パス
+  * 必要なファイルの相対パス
   * ソースコードの言語
   * ビルドコマンド
   * プログラム名
@@ -29,10 +29,10 @@
       * `path/to/custome_checker.py`: カスタムチェッカーの相対パス(`task.yaml`から見て)。`python3 process_output.txt judge_answer.txt`で実行でき、`AC`か`WA`か出力するpythonコード。
     * 想定される終了コード (e.g., 0)
 ```yaml
-source: "src/main.c"
+requiredFiles: ["src/main.c"]
 language: "c"
-build: "gcc -o main src/main.c"
-program: "main"
+build: ["gcc -o main src/main.c"]
+executable: "main"
 args: []
 timeMs: 1000
 memoryMB: 256

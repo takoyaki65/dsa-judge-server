@@ -2,16 +2,22 @@
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
     "properties": {
-        "source": {
-            "type": "string"
+        "requiredFiles": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
         },
         "language": {
             "type": "string"
         },
         "build": {
-            "type": "string"
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
         },
-        "program": {
+        "executable": {
             "type": "string"
         },
         "args": {
@@ -51,7 +57,7 @@
                             },
                             {
                                 "type": "string",
-                                "pattern": "*.py"
+                                "pattern": "^.*\\.py$"
                             }
                         ]
                     },
