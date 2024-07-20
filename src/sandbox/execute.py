@@ -10,7 +10,6 @@
 import uuid
 import subprocess
 import threading
-from datetime import timedelta
 from dataclasses import dataclass, field
 from dataclasses import replace
 import time  # 実行時間の計測に使用
@@ -102,7 +101,7 @@ class Volume:
 
         for PathInClient in filePathsFromClient:
             dstInContainer = (
-                Path("/workdir") / Path(DirPathInVolume) / Path(PathInClient).name
+                (Path("/workdir") / Path(DirPathInVolume) / Path(PathInClient).name).resolve()
             )
             err = ci.copyFile(PathInClient, str(dstInContainer))
             if err.message != "":
@@ -111,6 +110,34 @@ class Volume:
         ci.remove()
         return Error("")
 
+    def removeFiles(self, filePathsInVolume: list[str]) -> Error:
+        arguments = ["rm"]
+
+        for filePath in filePathsInVolume:
+            filePathInContainer = Path("/workdir") / Path(filePath)
+            arguments += [str(filePathInContainer.resolve())]
+
+        ci = ContainerInfo("")
+
+        err = ci.create(
+            containerName="ubuntu",
+            arguments=arguments,
+            workDir="/workdir/",
+            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=self)],
+        )
+
+        if err.message != "":
+            return err
+
+        result, err = ci.run()
+
+        if err.message != "":
+            return err
+
+        if result.exitCode != 0:
+            return Error(f"Failed to remove files: {result.stderr}")
+
+        return Error("")
 
 @dataclass
 class VolumeMountInfo:
@@ -362,7 +389,7 @@ class TaskResult:
 class TaskInfo:
     name: str  # コンテナイメージ名
     arguments: list[str] = field(default_factory=list)  # コンテナ内で実行するコマンド
-    timeout: timedelta = timedelta(0)  # タイムアウト時間
+    timeout: int = 0  # タイムアウト時間
     cpus: int = 0  # CPUの割り当て数
     memoryLimitMB: int = 0  # メモリ制限
     stackLimitKB: int = 0  # リカージョンの深さを制限
@@ -432,9 +459,9 @@ class TaskInfo:
         test_logger.info(f"docker start command: {cmd}")
 
         # self.timeout + 500msの制限時間を設定
-        timeout = 100.0  # デフォルトは100秒
-        if self.timeout != timedelta(0):
-            timeout = self.timeout.total_seconds() + 0.5
+        timeout = 30.0  # デフォルトは30秒
+        if self.timeout != 0:
+            timeout = self.timeout + 0.5
 
         # モニターを開始
         self.taskMonitor.start()
@@ -458,8 +485,8 @@ class TaskInfo:
         # タイムアウトしたかどうか
         TLE = False
         if (
-            self.timeout != timedelta(0)
-            and self.timeout.total_seconds()
+            self.timeout != 0
+            and self.timeout
             < self.taskMonitor.get_elapsed_time_ms() / 1000
         ):
             TLE = True
