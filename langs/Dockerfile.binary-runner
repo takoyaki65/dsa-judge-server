@@ -1,13 +1,4 @@
 FROM ubuntu:24.10
 
-# TODO: 権限に制限のあるユーザーを作成する。
-RUN useradd -m -s /bin/bash user
-
 # ユーザーのホームディレクトリに移動する。
-WORKDIR /home/user
-
-# workdirの所有者を変更する。
-RUN chown user:user /home/user
-
-# ユーザーを変更する。
-USER user
+WORKDIR /workdir
