@@ -321,6 +321,18 @@ class TaskMonitor:
     def get_used_memory_byte(self) -> int:
         return self.maxUsedMemory
 
+    '''
+    Dockerコンテナのメモリの取得方法は3つある
+    1. docker statsコマンドを使って取得する
+    2. /sys/fs/cgroup/system.slice/docker-xxxxxx.scope/memory.currentから取得する
+    3. psコマんドで取得する
+         * docker inspect -f '{{.State.Pid}}' <container id> でコンテナIDに対応するPIDを取得
+         * ps -p <pid> -o pid,comm,rss でRSSを取得
+    1の手法は遅い。
+    2の手法は早いが、Linuxでしか使えない。
+    3の手法の場合、ユーザ空間のプロセスのRSSを取得するため、全体のメモリ使用量を取得できない。
+    '''
+
     def __monitor_memory_usage_by_docker_stats(self) -> None:
         while self._monitoring:
             # docker statsコマンドを使ってコンテナのメモリ使用量を取得する
