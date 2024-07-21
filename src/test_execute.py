@@ -18,11 +18,13 @@ from db.database import SessionLocal
 logging.basicConfig(level=logging.INFO)
 test_logger = logging.getLogger(__name__)
 
+
 # Dockerコンテナを起動して、Hello, World!を出力するテスト
 def test_RunHelloWorld():
     task = TaskInfo(
-        name="ubuntu", arguments=["echo", "Hello, World!"],
-        timeout=timedelta(seconds=5),
+        name="ubuntu",
+        arguments=["echo", "Hello, World!"],
+        timeout=5,
         memoryLimitMB=256,
         cpus=1,
     )
@@ -40,6 +42,93 @@ def test_RunHelloWorld():
 
     assert result.stderr == ""
 
+
+# sandboxの戻り値をきちんとチェックできているか確かめるテスト
+def test_ExitCode():
+    task = TaskInfo(
+        name="ubuntu",
+        arguments=["sh", "-c", "exit 123"],
+        timeout=5,
+        memoryLimitMB=256,
+        cpus=1,
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert err.message == ""
+    assert result.exitCode == 123
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+# 標準入力をきちんと受け取れているか確かめるテスト
+def test_Stdin():
+    task = TaskInfo(
+        name="ubuntu",
+        arguments=["sh", "-c", "read input; test $input = dummy"],
+        Stdin="dummy",
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert err.message == ""
+    assert result.exitCode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+
+
+# 標準出力をきちんとキャプチャできているか確かめるテスト
+def test_Stdout():
+    task = TaskInfo(name="ubuntu", arguments=["echo", "dummy"])
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert err.message == ""
+    assert result.exitCode == 0
+    assert result.stdout == "dummy\n"
+    assert result.stderr == ""
+
+
+# 標準エラー出力をちゃんとキャプチャできているか確かめるテスト
+def test_Stderr():
+    task = TaskInfo(name="ubuntu", arguments=["sh", "-c", "echo dummy >&2"])
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert err.message == ""
+    assert result.exitCode == 0
+    assert result.stdout == ""
+    assert result.stderr == "dummy\n"
+
+
+# sleepした分ちゃんと実行時間が計測されているか確かめるテスト
+def test_SleepTime():
+    task = TaskInfo(name="ubuntu", arguments=["sleep", "3"], timeout=5)
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert err.message == ""
+    assert result.exitCode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert result.timeMS >= 2000 and result.timeMS <= 4000
+
+
 # ファイルをDockerボリュームにコピーするテスト
 def test_CopyFileFromHostToVolume():
     # ファイル転送先のボリュームの作成
@@ -51,20 +140,16 @@ def test_CopyFileFromHostToVolume():
     with TemporaryDirectory() as tempdir:
         with open(Path(tempdir) / "test.txt", "w") as f:
             f.write("Hello, World!")
-        
+
         # ファイルをボリュームにコピー
-        volume.copyFile(str(Path(tempdir) / "test.txt"), "test.txt") 
+        volume.copyFile(str(Path(tempdir) / "test.txt"), "test.txt")
 
     # ファイルがコピーされたことを確認
     task = TaskInfo(
-        name="ubuntu", arguments=["cat", "test.txt"],
+        name="ubuntu",
+        arguments=["cat", "test.txt"],
         workDir="/workdir/",
-        volumeMountInfo=[
-            VolumeMountInfo(
-                path="/workdir/",
-                volume=volume
-            )
-        ]
+        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
     )
 
     result, err = task.run()
@@ -82,6 +167,7 @@ def test_CopyFileFromHostToVolume():
     err = volume.remove()
 
     assert err.message == ""
+
 
 # Dockerコンテナのmysqlサーバーにあるtaskテーブルを操作するテスト
 def test_InsertTaskTable():
@@ -113,8 +199,7 @@ def test_InsertTaskTable():
         assert deleted_task is None
 
         db.close()
-    
+
     except Exception as e:
         test_logger.error(e)
         assert False
-
