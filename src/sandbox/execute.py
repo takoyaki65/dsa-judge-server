@@ -86,7 +86,9 @@ class Volume:
         ci.remove()
         return err
 
-    def copyFiles(self, filePathsFromClient: list[str], DirPathInVolume: str) -> Error:
+    def copyFiles(
+        self, filePathsFromClient: list[str], DirPathInVolume: str = "./"
+    ) -> Error:
         ci = ContainerInfo("")
 
         err = ci.create(
@@ -129,14 +131,24 @@ class Volume:
         if err.message != "":
             return err
 
-        result, err = ci.run()
+        command = ["docker", "start", ci.containerID]
+
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+
+        err.message = result.stderr
 
         if err.message != "":
             return err
 
-        if result.exitCode != 0:
+        exit_code, err = inspectExitCode(ci.containerID)
+
+        if err.message != "":
+            return err
+
+        if exit_code != 0:
             return Error(f"Failed to remove files: {result.stderr}")
 
+        ci.remove()
         return Error("")
 
 
@@ -373,6 +385,9 @@ class TaskMonitor:
                             self.maxUsedMemory = mem_usage
             except FileNotFoundError:
                 # test_logger.info(f"Cgroup Path not exists: {cgroup_path}")
+                pass
+            except OSError:
+                # test_logger.info(f"Failed to read cgroup file: {cgroup_path}")
                 pass
             time.sleep(0.001)
 

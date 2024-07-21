@@ -143,7 +143,7 @@ def test_Timeout():
 
 
 # ファイルをDockerボリュームにコピーするテスト
-def test_CopyFileFromHostToVolume():
+def test_CopyFileFromClientToVolume():
     # ファイル転送先のボリュームの作成
     volume, err = Volume.create()
 
@@ -178,6 +178,129 @@ def test_CopyFileFromHostToVolume():
     assert result.stderr == ""
 
     err = volume.remove()
+
+    assert err.message == ""
+
+
+# 複数のファイルをDockerボリュームにコピーするテスト
+def test_CopyFilesFromClientToVolume():
+    # ファイル転送先のボリュームの作成
+    volume, err = Volume.create()
+
+    assert err.message == ""
+
+    # tempdir にファイルを作成
+    with TemporaryDirectory() as tempdir:
+        with open(Path(tempdir) / "test1.txt", "w") as f:
+            f.write("Hello, World!")
+
+        with open(Path(tempdir) / "test2.txt", "w") as f:
+            f.write("Goodbye, World!")
+
+        # ファイルをボリュームにコピー
+        volume.copyFiles(
+            filePathsFromClient=[
+                str(Path(tempdir) / "test1.txt"),
+                str(Path(tempdir) / "test2.txt"),
+            ],
+            DirPathInVolume="./",
+        )
+
+    # ファイルがコピーされたことを確認
+    task = TaskInfo(
+        name="ubuntu",
+        arguments=["cat", "test1.txt", "test2.txt"],
+        workDir="/workdir/",
+        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+
+    assert err.message == ""
+
+    assert result.exitCode == 0
+
+    assert result.stdout == "Hello, World!Goodbye, World!"
+
+    assert result.stderr == ""
+
+    err = volume.remove()
+
+    assert err.message == ""
+
+
+# Dockerボリュームにある複数のファイルを削除するテスト
+def test_RemoveFilesInVolume():
+    # ファイル転送先のボリュームの作成
+    volume, err = Volume.create()
+
+    assert err.message == ""
+
+    # tempdir にファイルを作成
+    with TemporaryDirectory() as tempdir:
+        with open(Path(tempdir) / "test1.txt", "w") as f:
+            f.write("Hello, World!")
+
+        with open(Path(tempdir) / "test2.txt", "w") as f:
+            f.write("Goodbye, World!")
+
+        # ファイルをボリュームにコピー
+        volume.copyFiles(
+            filePathsFromClient=[
+                str(Path(tempdir) / "test1.txt"),
+                str(Path(tempdir) / "test2.txt"),
+            ],
+            DirPathInVolume="./",
+        )
+
+    # ファイルがコピーされたことを確認
+    task = TaskInfo(
+        name="ubuntu",
+        arguments=["ls"],
+        workDir="/workdir/",
+        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+
+    assert err.message == ""
+
+    assert result.exitCode == 0
+
+    assert result.stdout == "test1.txt\ntest2.txt\n"
+
+    assert result.stderr == ""
+
+    # ファイルを削除
+    volume.removeFiles(["test1.txt", "test2.txt"])
+
+    # ファイルが削除されたことを確認
+    task = TaskInfo(
+        name="ubuntu",
+        arguments=["ls"],
+        workDir="/workdir/",
+        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+
+    assert err.message == ""
+
+    assert result.exitCode == 0
+
+    assert result.stdout == ""
+
+    assert result.stderr == ""
+
+    err = volume.remove()
+
+    test_logger.info(err)
 
     assert err.message == ""
 
