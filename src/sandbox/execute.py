@@ -51,7 +51,7 @@ class Volume:
 
         if err != "":
             return Volume(""), Error(err)
-        
+
         test_logger.info(f"volumeName: {volumeName}")
         return Volume(volumeName), Error("")
 
@@ -101,8 +101,8 @@ class Volume:
 
         for PathInClient in filePathsFromClient:
             dstInContainer = (
-                (Path("/workdir") / Path(DirPathInVolume) / Path(PathInClient).name).resolve()
-            )
+                Path("/workdir") / Path(DirPathInVolume) / Path(PathInClient).name
+            ).resolve()
             err = ci.copyFile(PathInClient, str(dstInContainer))
             if err.message != "":
                 return err
@@ -138,6 +138,7 @@ class Volume:
             return Error(f"Failed to remove files: {result.stderr}")
 
         return Error("")
+
 
 @dataclass
 class VolumeMountInfo:
@@ -359,17 +360,19 @@ class TaskMonitor:
         # /sys/fs/cgroup/system.slice/docker-xxxxxx.scope/memory.current
         # からメモリ使用量をバイト単位で取得する
         cgroup_path = (
-            Path("/sys/fs/cgroup/system.slice/")
+            Path("/sys-host/fs/cgroup/system.slice/")
             / f"docker-{self.containerInfo.containerID}.scope"
             / "memory.current"
         )
         while self._monitoring:
             try:
-                with cgroup_path.open("r") as f:
-                    mem_usage = int(f.read())
-                    if mem_usage > self.maxUsedMemory:
-                        self.maxUsedMemory = mem_usage
+                if cgroup_path.exists():
+                    with cgroup_path.open("r") as f:
+                        mem_usage = int(f.read())
+                        if mem_usage > self.maxUsedMemory:
+                            self.maxUsedMemory = mem_usage
             except FileNotFoundError:
+                # test_logger.info(f"Cgroup Path not exists: {cgroup_path}")
                 pass
             time.sleep(0.001)
 
@@ -467,14 +470,52 @@ class TaskInfo:
         self.taskMonitor.start()
 
         # Dockerコンテナの起動
-        ProcessResult = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            input=self.Stdin,
-            check=False,
-        )
+        TLE = False
+        try:
+            ProcessResult = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                input=self.Stdin,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            # タイムアウトした場合
+            # モニターを終了(これをしないとtaskMonitorのスレッドが終了しない)
+            self.taskMonitor.end()
+
+            # まだ実行中の場合があるので、docker stop...で停止させる。
+            stop_cmd = ["docker", "stop", containerInfo.containerID]
+            test_logger.info(stop_cmd)
+            resultForStop = subprocess.run(stop_cmd, check=False)
+            if resultForStop.returncode != 0:
+                message = f"failed to stop docker: {containerInfo.containerID}"
+                test_logger.info(message)
+                return TaskResult(
+                    TLE=True,
+                    timeMS=int(self.taskMonitor.get_elapsed_time_ms()),
+                    memoryByte=self.taskMonitor.get_used_memory_byte(),
+                ), Error(message)
+            # 戻り値を検出
+            exit_code, err = inspectExitCode(containerId=containerInfo.containerID)
+            if err.message != "":
+                return (
+                    TaskResult(
+                        TLE=True,
+                        timeMS=int(self.taskMonitor.get_elapsed_time_ms()),
+                        memoryByte=self.taskMonitor.get_used_memory_byte(),
+                    ),
+                    err,
+                )
+            return TaskResult(
+                exitCode=exit_code,
+                TLE=True,
+                timeMS=int(self.taskMonitor.get_elapsed_time_ms()),
+                memoryByte=self.taskMonitor.get_used_memory_byte(),
+            ), Error("")
+
+        test_logger.info(ProcessResult)
 
         # モニターを終了
         self.taskMonitor.end()
@@ -483,11 +524,9 @@ class TaskInfo:
         self.Stderr = ProcessResult.stderr
 
         # タイムアウトしたかどうか
-        TLE = False
         if (
             self.timeout != 0
-            and self.timeout
-            < self.taskMonitor.get_elapsed_time_ms() / 1000
+            and self.timeout < self.taskMonitor.get_elapsed_time_ms() / 1000
         ):
             TLE = True
 

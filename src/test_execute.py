@@ -129,6 +129,19 @@ def test_SleepTime():
     assert result.timeMS >= 2000 and result.timeMS <= 4000
 
 
+# タイムアウトをきちんと検出できているか確かめるテスト
+def test_Timeout():
+    task = TaskInfo(name="ubuntu", arguments=["sleep", "100"], timeout=3)
+
+    result, err = task.run()
+    
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert err.message == ""
+    assert result.TLE == True
+
+
 # ファイルをDockerボリュームにコピーするテスト
 def test_CopyFileFromHostToVolume():
     # ファイル転送先のボリュームの作成
