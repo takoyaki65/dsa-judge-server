@@ -134,7 +134,7 @@ def test_Timeout():
     task = TaskInfo(name="ubuntu", arguments=["sleep", "100"], timeout=3)
 
     result, err = task.run()
-    
+
     test_logger.info(result)
     test_logger.info(err)
 
@@ -176,6 +176,120 @@ def test_CopyFileFromHostToVolume():
     assert result.stdout == "Hello, World!"
 
     assert result.stderr == ""
+
+    err = volume.remove()
+
+    assert err.message == ""
+
+
+# メモリ制限を検出できるかチェック
+def test_MemoryLimit():
+    task = TaskInfo(
+        name="ubuntu",
+        arguments=["dd", "if=/dev/zero", "of=/dev/null", "bs=800M"],
+        timeout=3,
+        memoryLimitMB=500,
+    )
+
+    result, err = task.run()
+
+    assert err.message == ""
+
+    test_logger.info(result)
+
+    assert result.exitCode != 0
+    assert result.TLE == False
+    assert abs(result.memoryByte - 500 * 1024 * 1024) < 1024 * 1024
+
+
+# ネットワーク制限をできているかチェック
+def test_NetworkDisable():
+    task = TaskInfo(
+        name="ibmcom/ping",
+        arguments=["ping", "-c", "5", "google.com"],
+        enableNetwork=None,
+    )
+
+    result, err = task.run()
+
+    assert err.message == ""
+
+    test_logger.info(result)
+
+    assert result.exitCode != 0
+    assert result.TLE == False
+    assert result.stdout == ""
+
+
+# フォークボムなどの攻撃に対処できるように、プロセス数制限ができているかチェック
+def test_ForkBomb():
+    volume, err = Volume.create()
+
+    assert err.message == ""
+
+    err = volume.copyFile("sources/fork_bomb.sh", "fork_bomb.sh")
+
+    assert err.message == ""
+
+    task = TaskInfo(
+        name="ubuntu",
+        arguments=["./fork_bomb.sh"],
+        workDir="/workdir/",
+        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
+        timeout=3,
+        pidsLimit=10,
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    err = volume.remove()
+
+    assert err.message == ""
+
+
+# スタックメモリの制限ができているかチェック
+def test_UseManyStack():
+    volume, err = Volume.create()
+
+    assert err.message == ""
+
+    err = volume.copyFile("sources/use_many_stack.cpp", "use_many_stack.cpp")
+
+    assert err.message == ""
+
+    task = TaskInfo(
+        name="gcc:13.3",
+        arguments=["g++", "use_many_stack.cpp"],
+        workDir="/workdir/",
+        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert err.message == ""
+    assert result.exitCode == 0
+
+    task = TaskInfo(
+        name="gcc:13.3",
+        arguments=["./a.out"],
+        workDir="/workdir/",
+        volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
+        stackLimitKB=10240,
+        memoryLimitMB=256,
+    )
+
+    result, err = task.run()
+
+    test_logger.info(result)
+    test_logger.info(err)
+
+    assert result.exitCode != 0
 
     err = volume.remove()
 
