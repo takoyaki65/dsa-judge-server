@@ -1,9 +1,9 @@
-source: "helloworld.c"
+requiredFiles: ["helloworld.c"]
 language: "c"
-build: "gcc -o helloworld helloworld.c"
-program: "helloworld"
+build: ["gcc -o helloworld helloworld.c"]
+executable: "helloworld"
 args: []
-timeMs: 1000
+timeS: 1000
 memoryMB: 256
 
 testcases:
