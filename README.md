@@ -58,10 +58,9 @@ result:
     status: "AC"
     timeMs: 100
     memoryMB: 256
+    exitCode: 0
     stdout: "Hello, World!\n"
     stderr: ""
-  test01:
-    status: "running"
 ```
   * `status`: タスクの状態。`running`, `completed`のいずれか
   * `progress`: タスクの進捗度。0.0から1.0の間の実数
