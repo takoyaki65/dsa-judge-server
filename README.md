@@ -3,73 +3,97 @@
 プログラム課題のチェックを自動化するためのジャッジサーバーを作成する。
 
 ## 要件
-* クライアント(Dockerコンテナ)がホストの`path/to/task_dir/`にタスクに必要なファイルをアップロードし、データベースサーバーにそのタスクの情報を登録する。このとき、登録したタスク情報のステータスは`submitted`とする。定期的にジャッジサーバーがデータベースサーバーに問い合わせ、ステータスが`submitted`のタスクを取得し、`pending`に変更する。ジャッジサーバーは、`path/to/task_dir/`にアップロードされたファイルを取得し、タスクを実行する。タスクの実行が完了したら、データベースサーバーにそのタスクの結果を登録する。このとき、登録したタスク情報のステータスは`completed`とする。
-![alt text](image.png)
+クライアントがDBサーバにジャッジリクエストを登録する。周期的にDBサーバをポーリングしているジャッジ
+サーバーがそのリクエストを検知し、リクエストに則ってコンパイル・実行・チェックを行う。その後、結果を
+DBサーバーに登録する。
 
-* `path/to/task_dir/`には、以下のファイルが格納されている。
-  * (必須)`task.yaml`: タスクの情報が記録されている
-  * (自動生成される)`status.yaml`: タスクの実行状況が記録されている
-  * その他のファイル: ソースコード、テストケースなど
+```mermaid 
+erDiagram
+	Lecture {
+		Int id PK "授業エントリのID"
+		String title "授業のタイトル名 e.g., 課題1, 課題2, ..."
+		TimeStamp start_date "課題ページの公開日"
+		TimeStamp end_date "課題ページの公開終了日"
+	}
+	Problem {
+		Int lecture_id PK "Lecture.idからの外部キー"
+		Int assignment_id PK "何番目の課題か, e.g., 1, 2, ..."
+		Boolean for_evaluation PK "課題採点用かどうか, True/False"
+		String title "課題名 e.g., 基本課題1"
+		String description_path "課題の説明文のファイルパス"
+		Int timeMS "ジャッジの制限時間[ms] e.g., 1000"
+		Int memoryMB "ジャッジの制限メモリ[MB] e.g., 1024"
+		String build_script_path "ビルドする際に用いるスクリプトファイルのパス"
+		String executable "最終的に得られる実行バイナリ名 e.g., main"
+	}
+	SourceFiles {
+		Int id PK "ソースコードのID(auto increment)"
+		Int lecture_id FK "何回目の授業で出される課題か, e.g., 1, 2, ..."
+		Int assignment_id FK "何番目の課題か, e.g., 1, 2, ..."
+		Boolean for_evaluation FK "課題採点用かどうか, True/False"
+		Boolean from_client "提出者からのソースコードか、用意されたものか, True/False"
+		String path "ソースコードのパス(Makefileも全部含める)"
+	}
+	TestCases {
+		Int id PK "テストケースのID(auto increment)"
+		Int lecture_id FK "何回目の授業で出される課題か, e.g., 1, 2, ..."
+		Int assignment_id FK "何番目の課題か, e.g., 1, 2, ..."
+		Boolean for_evaluation FK "課題採点用かどうか, True/False"
+		String description "どの部分点に相当するかの説明"
+		String stdin_path "標準入力のパス, path/to/stdin.txt"
+		String stdout_path "想定される標準出力のパス, path/to/stdout.txt"
+		String stderr_path "想定される標準エラー出力のパス, path/to/stderr.txt"
+	}
+	Lecture ||--|{ Problem : "has many problems"
+	Problem ||--|{ SourceFiles : "has many fixed source files"
+	Problem ||--|{ TestCases : "has many test cases"
 
-* `task.yaml`には、実行すべきジョブの情報が記録されている。ジョブの情報とは、以下のようなものである。なお、実行するプログラムは一つで、引数は固定であるとする。
-  * 必要なファイルの相対パス
-  * ソースコードの言語
-  * ビルドコマンド
-  * プログラム名
-  * 引数リスト
-  * グローバルな制限時間 (ms)
-  * グローバルな制限メモリ (MB)
-  * テストケースのエントリ(複数あり)
-    * 標準入力に流す入力ファイルの相対パス (e.g., `test00.in`)
-    * 想定される標準出力のファイルの相対パス (e.g., `test00.out`)
-    * 想定される標準エラー出力のファイルの相対パス (e.g., `test00.err`)
-    * 出力のチェッカー
-      * `exact`: 標準出力と想定される出力が完全に一致すること(**最初はこれだけ実装**)
-      * `ignore_whitespace`: 標準出力と想定される出力が完全に一致すること。ただし、余分な空白文字・末尾の改行文字の有無は無視する
-      * `path/to/custome_checker.py`: カスタムチェッカーの相対パス(`task.yaml`から見て)。`python3 process_output.txt judge_answer.txt`で実行でき、`AC`か`WA`か出力するpythonコード。
-    * 想定される終了コード (e.g., 0)
-```yaml
-requiredFiles: ["src/main.c"]
-language: "c"
-build: ["gcc -o main src/main.c"]
-executable: "main"
-args: []
-timeMs: 1000
-memoryMB: 256
-testcases:
-  - input: "test00.in"
-    output: "test00.out"
-    error: "test00.err"
-    checker: "exact"
-    exitCode: 0
-  - input: "test01.in"
-    output: "test01.out"
-    error: "test01.err"
-    checker: "ignore_whitespace"
-    exitCode: 0
+	AdminUser {
+		String id PK "ユーザID e.g., zakki"
+		String name "ユーザ名 e.g., 山崎"
+	}
+	Student {
+		String id PK "学籍番号 e.g., s2200342"
+		String name "ユーザ名 e.g., 岡本"
+	}
+	BatchSubmission {
+		Int id PK "バッチ採点のID(auto increment)"
+		TimeStamp ts "バッチ採点のリクエスト時刻"
+		String user_id FK "リクエストした管理者のID"
+	}
+	Submission {
+		Int id PK "提出されたジャッジリクエストのID(auto increment)"
+		TimeStamp ts "リクエストされた時刻"
+		Int batch_id FK "ジャッジリクエストが属しているバッチリクエストのID, 学生のフォーマットチェック提出ならNULL"
+		String student_id FK "採点対象の学生の学籍番号"
+		Int lecture_id FK "何回目の授業で出される課題か, e.g., 1, 2, ..."
+		Int assignment_id FK "何番目の課題か, e.g., 1, 2, ..."
+		Boolean for_evaluation FK "課題採点用かどうか, True/False"
+		Enum status "リクエストの処理状況, queued/running/done/failed"
+	}
+	UploadedFiles {
+		Int id PK "アップロードされたファイルのID(auto increment)"
+		TimeStamp ts "アップロードされた時刻"
+		Int submission_id FK "そのファイルが必要なジャッジリクエストのID"
+		String path "アップロードされたファイルのパス"
+	}
+	JudgeResult {
+		Int id PK "ジャッジ結果のID(auto increment)"
+		Timestamp ts "ジャッジ結果が出た時刻"
+		Int submission_id FK "ジャッジ結果に紐づいているジャッジリクエストのID"
+		Int testcase_id FK "ジャッジ結果に紐づいているテストケースのID"
+		Int timeMS "実行時間[ms]"
+		Int memoryKB "消費メモリ[KB]"
+		Enum result "実行結果のステータス、 AC/WA/TLE/MLE/CE/RE/OLE/IE"
+	}
+	AdminUser ||--|{ BatchSubmission : "has many batch judges"
+	Student ||--|{ Submission : "has many format check requests"
+	BatchSubmission ||--|{ Submission : "is composed of single judges"
+	Problem ||--|{ Submission : "has many request judges"
+	Submission ||--o{ JudgeResult : "has many judge result or none"
+	TestCases ||--o{ JudgeResult : "has many associated judge result or none"
+	Submission ||--|{ UploadedFiles : "has many associated uploaded files"
 ```
-
-* サーバは、タスクの実行状況を`status.yaml`で返す。`status.yaml`は以下のような形式である。
-```yaml
-status: "running"
-progress: 0.5
-result:
-  test00:
-    status: "AC"
-    timeMs: 100
-    memoryMB: 256
-    exitCode: 0
-    stdout: "Hello, World!\n"
-    stderr: ""
-```
-  * `status`: タスクの状態。`running`, `completed`のいずれか
-  * `progress`: タスクの進捗度。0.0から1.0の間の実数
-  * `result`: テストケースごとの結果。テストケースのエントリがキーである。テストケースの結果は以下のような形式である。
-    * `status`: テストケースの結果。`AC`(正解), `WA`(不正解), `RE`(実行時エラー), `TLE`(時間超過), `MLE`(メモリー超過)のいずれか
-    * `timeMs`: 実行時間 (ms)
-    * `memoryMB`: メモリ消費量 (MB)
-    * `stdout`: 標準出力
-    * `stderr`: 標準エラー出力
 
 ## 設計
 judgeサーバーはDockerコンテナで動かす。クライアントが登録したタスクを元に、judgeサーバーが
