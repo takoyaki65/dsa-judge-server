@@ -40,6 +40,8 @@ erDiagram
 		Int assignment_id FK "何番目の課題か, e.g., 1, 2, ..."
 		Boolean for_evaluation FK "課題採点用かどうか, True/False"
 		String description "どの部分点に相当するかの説明"
+		Int score "配点"
+		String script_path "実行するスクリプトのパス, for format check"
 		String stdin_path "標準入力のパス, path/to/stdin.txt"
 		String stdout_path "想定される標準出力のパス, path/to/stdout.txt"
 		String stderr_path "想定される標準エラー出力のパス, path/to/stderr.txt"

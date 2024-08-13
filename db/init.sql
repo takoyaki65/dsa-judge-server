@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS TestCases (
     assignment_id INT, -- 何番目の課題か, e.g., 1, 2, ...
     for_evaluation BOOLEAN, -- 課題採点用かどうか, True/False
     description TEXT, -- どの部分点に相当するかの説明
+    score INT, -- テストケースの配点, フォーマットチェック用だったらゼロ
+    script_path VARCHAR(255), -- ./<実行バイナリ> の形式に合わない場合のスクリプトファイルのパス
     stdin_path VARCHAR(255) NOT NULL, -- 標準入力のパス, path/to/stdin.txt
     stdout_path VARCHAR(255) NOT NULL, -- 想定される標準出力のパス, path/to/stdout.txt
     stderr_path VARCHAR(255) NOT NULL, -- 想定される標準エラー出力のパス, path/to/stderr.txt
