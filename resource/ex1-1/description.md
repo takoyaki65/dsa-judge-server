@@ -21,10 +21,8 @@
 
 # 提出方法
 `Makefile`, `gcd_euclid.c`, `main_euclid.c`の3点を提出せよ。
-* `Makefile` : 以下の内容が書かれたビルドスクリプト
+* `Makefile` : 以下の内容が含まれたビルドスクリプト
 ```Makefile
-gcd_iter: gcd_iter.o main_iter.o
-
 gcd_euclid: gcd_euclid.o main_euclid.o
 ```
 * `gcd_euclid.c` : 二つの整数から最大公約数を計算する関数`gcd_euclid`が定義されているCプログラム
