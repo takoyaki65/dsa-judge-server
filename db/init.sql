@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS Problem (
 );
 
 -- Problemテーブルに初期データを挿入
-INSERT INTO Problem (lecture_id, assignment_id, visible, title, description_path, timeMS, memoryMB, build_script_path, executable) VALUES
+INSERT INTO Problem (lecture_id, assignment_id, for_evaluation, title, description_path, timeMS, memoryMB, build_script_path, executable) VALUES
 (1, 1, false, "基本課題", "ex1-1/description.md", 1000, 1024, "ex1-1/build.sh", "gcd_euclid"),
 (1, 1, true , "基本課題", "ex1-1/description.md", 1000, 1024, "ex1-1/build.sh", "gcd_euclid"),
 (1, 2, false, "発展課題", "ex1-2/description.md", 1000, 1024, "ex1-2/build.sh", "gcd_recursive");
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS RequiredFiles (
 );
 
 -- RequiredFilesテーブルに初期データを挿入
-INSERT INTO RequiredFiles (lecture_id, assignment_id, visible, name) VALUES
+INSERT INTO RequiredFiles (lecture_id, assignment_id, for_evaluation, name) VALUES
 (1, 1, false, "gcd_euclid.c"),
 (1, 1, false, "main_euclid.c"),
 (1, 1, false, "Makefile"),
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS Student (
 
 -- Studentテーブルに初期データを挿入
 INSERT INTO Student (id, name) VALUES
-("sxxxxxxx", "溝上 拓也")
+("sxxxxxxx", "溝上 拓也");
 
 -- BatchSubmissionテーブルの作成
 CREATE TABLE IF NOT EXISTS BatchSubmission (

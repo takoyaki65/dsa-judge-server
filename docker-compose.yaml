@@ -8,8 +8,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./src:/app
-      - ./task_dir:/task_dir
-      - ./task_schema.json:/task_schema.json
+      - ./resource:/resource
       - /sys/fs/cgroup:/sys-host/fs/cgroup # Windows, MacOSだとこれ意味ない
     ports:
       - "8080:8080"
