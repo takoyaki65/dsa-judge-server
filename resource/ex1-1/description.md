@@ -29,7 +29,7 @@ Usage: ./gcd_euclid <number1> <number2>
 ```
 2つめのケースに対しては、標準エラー出力に以下の形式のメッセージを出力すること。
 ```
-Negative value detected.
+Two number must be greater than 0.
 ```
 1と2両方のケースに対して、戻り値は1(`EXIT_FAILURE`と同じ)とすること。
 

@@ -15,7 +15,7 @@ int main(int argc, char *argv[])
 
     if (n <= 0 || m <= 0)
     {
-        fprintf(stderr, "Negative value detected.\n");
+        fprintf(stderr, "Two number must be greater than 0.\n");
         return EXIT_FAILURE;
     }
 
