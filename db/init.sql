@@ -135,11 +135,11 @@ CREATE TABLE IF NOT EXISTS Submission (
     id INT AUTO_INCREMENT PRIMARY KEY, -- 提出されたジャッジリクエストのID(auto increment)
     ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- リクエストされた時刻
     batch_id INT, -- ジャッジリクエストが属しているバッチリクエストのID, 学生のフォーマットチェック提出ならNULL
-    student_id VARCHAR(255), -- 採点対象の学生の学籍番号
+    student_id VARCHAR(255) NOT NULL, -- 採点対象の学生の学籍番号
     lecture_id INT, -- 何回目の授業で出される課題か, e.g., 1, 2, ...
     assignment_id INT, -- 何番目の課題か, e.g., 1, 2, ...
     for_evaluation BOOLEAN, -- 課題採点用かどうか, True/False
-    status ENUM('queued', 'running', 'done', 'CE') DEFAULT 'queued', -- リクエストの処理状況, queued/running/done/CE(Compile Error)
+    status ENUM('pending', 'queued', 'running', 'done', 'CE') DEFAULT 'pending', -- リクエストの処理状況, pending/queued/running/done/CE(Compile Error)
     FOREIGN KEY (batch_id) REFERENCES BatchSubmission(id),
     FOREIGN KEY (student_id) REFERENCES Student(id),
     FOREIGN KEY (lecture_id, assignment_id, for_evaluation) REFERENCES Problem(lecture_id, assignment_id, for_evaluation)

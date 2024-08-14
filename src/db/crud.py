@@ -3,34 +3,55 @@ from sqlalchemy.orm import Session
 
 from . import models
 
-def fetch_task_by_id(db: Session, task_id: int) -> models.Task | None:
-    return db.query(models.Task).filter(models.Task.id == task_id).first()
-
-def fetch_pending_task_and_update_to_processing(db: Session, limit: int = 1) -> list[models.Task]:
-    # 他のワーカが同じタスクを取得しないように、with_for_update()を使ってロックをかける
-    task = db.query(models.Task).filter(models.Task.status == 'pending').limit(limit).with_for_update().all()
-    for t in task:
-        t.status = 'processing'
+# Submissionテーブルから、statusが"queued"のジャッジリクエストを数件取得し、statusを"running"
+# に変え、変更したリクエスト(複数)を返す
+def fetch_queued_judge(db: Session, n: int) -> list[models.Submission]:
+    submissions = db.query(models.Submission).filter(models.Submission.status == 'queued').limit(n).all()
+    for submission in submissions:
+        submission.status = 'running'
     db.commit()
-    return task
+    return submissions
 
-def mark_task_as_done(db: Session, task_id: int) -> None:
-    task = db.query(models.Task).filter(models.Task.id == task_id).one()
-    if task is None:
-        return
-    task.status = 'done'
-    db.commit()
+# ジャッジリクエストに紐づいている、アップロードされたファイルのパスのリストをUploadedFiles
+# テーブルから取得して返す
+def fetch_uploaded_filepaths(db: Session, submission_id: int) -> list[str]:
+    uploaded_files = db.query(models.UploadedFiles).filter(models.UploadedFiles.submission_id == submission_id).all()
+    return [file.path.__str__() for file in uploaded_files]
 
-def submit_task(db: Session, path_to_dir: str) -> models.Task:
-    task = models.Task(path_to_dir=path_to_dir)
-    db.add(task)
-    db.commit()
-    db.refresh(task)
-    return task
+# 特定の問題でこちらで用意しているファイルのパス(複数)をArrangedFilesテーブルから取得する
+def fetch_arranged_filepaths(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> list[str]:
+    arranged_files = db.query(models.ArrangedFiles).filter(
+        models.ArrangedFiles.lecture_id == lecture_id,
+        models.ArrangedFiles.assignment_id == assignment_id,
+        models.ArrangedFiles.for_evaluation == for_evaluation
+    ).all()
+    return [file.path.__str__() for file in arranged_files]
 
-def delete_task_by_id(db: Session, task_id: int) -> None:
-    task_to_delete = db.query(models.Task).filter(models.Task.id == task_id).first()
-    if task_to_delete is None:
-        return
-    db.delete(task_to_delete)
+# 特定の問題で必要とされているのファイル名のリストをRequiredFilesテーブルから取得する
+def fetch_required_files(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> list[str]:
+    required_files = db.query(models.RequiredFiles).filter(
+        models.RequiredFiles.lecture_id == lecture_id,
+        models.RequiredFiles.assignment_id == assignment_id,
+        models.RequiredFiles.for_evaluation == for_evaluation
+    ).all()
+    return [file.name.__str__() for file in required_files]
+
+# 特定の問題に紐づいたテストケースのリストをTestCasesテーブルから取得する
+def fetch_testcases(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> list[models.TestCases]:
+    return db.query(models.TestCases).filter(
+        models.TestCases.lecture_id == lecture_id,
+        models.TestCases.assignment_id == assignment_id,
+        models.TestCases.for_evaluation == for_evaluation
+    ).all()
+
+# 特定のテストケースに対するジャッジ結果をJudgeResultテーブルに登録する
+def register_judge_result(db: Session, submission_id: int, testcase_id: int, timeMS: int, memoryKB: int, result: str) -> None:
+    judge_result = models.JudgeResult(
+        submission_id=submission_id,
+        testcase_id=testcase_id,
+        timeMS=timeMS,
+        memoryKB=memoryKB,
+        result=result
+    )
+    db.add(judge_result)
     db.commit()
