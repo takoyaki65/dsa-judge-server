@@ -26,13 +26,19 @@ erDiagram
 		String build_script_path "ビルドする際に用いるスクリプトファイルのパス"
 		String executable "最終的に得られる実行バイナリ名 e.g., main"
 	}
-	SourceFiles {
+	ArrangedFiles {
 		Int id PK "ソースコードのID(auto increment)"
 		Int lecture_id FK "何回目の授業で出される課題か, e.g., 1, 2, ..."
 		Int assignment_id FK "何番目の課題か, e.g., 1, 2, ..."
 		Boolean for_evaluation FK "課題採点用かどうか, True/False"
-		Boolean from_client "提出者からのソースコードか、用意されたものか, True/False"
 		String path "ソースコードのパス(Makefileも全部含める)"
+	}
+	RequiredFiles {
+		Int id PK "ソースコードのID(auto increment)"
+		Int lecture_id FK "何回目の授業で出される課題か, e.g., 1, 2, ..."
+		Int assignment_id FK "何番目の課題か, e.g., 1, 2, ..."
+		Boolean for_evaluation FK "課題採点用かどうか, True/False"
+		String name "ファイル名(Makefileも全部含める)"
 	}
 	TestCases {
 		Int id PK "テストケースのID(auto increment)"
@@ -50,7 +56,8 @@ erDiagram
 		Int exit_code "想定される戻り値"
 	}
 	Lecture ||--|{ Problem : "has many problems"
-	Problem ||--|{ SourceFiles : "has many fixed source files"
+	Problem ||--|{ RequiredFiles : "has many required files"
+	Problem ||--|{ ArrangedFiles : "has many arranged files"
 	Problem ||--|{ TestCases : "has many test cases"
 
 	AdminUser {
