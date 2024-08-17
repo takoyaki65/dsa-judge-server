@@ -7,3 +7,6 @@ class Error:
 
     def __str__(self):
         return f"Error(message=\"{self.message}\")"
+    
+    def silence(self) -> bool:
+        return self.message == ""
