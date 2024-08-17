@@ -1,7 +1,4 @@
-import yaml
-from jsonschema import validate
 from pathlib import Path
-import json
 from dataclasses import dataclass, field
 from sandbox.execute import Volume
 from sandbox.my_error import Error
@@ -9,179 +6,114 @@ from sandbox.execute import TaskInfo
 from sandbox.execute import VolumeMountInfo
 from sandbox.execute import TaskResult
 from dotenv import load_dotenv
+from db.models import TestCases
+from db.crud import (
+    fetch_required_files,
+    fetch_arranged_filepaths,
+    fetch_testcases,
+    fetch_uploaded_filepaths,
+)
+from db.database import SessionLocal
 import os
 from enum import Enum
 
 load_dotenv()
 
-PATH_TO_TASK_DIR = Path(os.getenv("PATH_TO_TASK_DIR")).resolve()
+RESOURCE_DIR = Path(os.getenv("RESOURCE_PATH"))
 
-PATH_TO_SCHEMA = "/task_schema.json"
-
-COMPILE_TIMEOUT = 30  # コンパイルのタイムアウト時間 30秒
-CHECKER_TIMEOUT = 30  # チェッカーのタイムアウト時間 30秒
-
-DEFAULT_PIDS_LIMIT = 100  # プロセス数のデフォルトの制限
-DEFAULT_STACK_LIMIT = -1  # スタックサイズのデフォルトの制限(-1は無制限)
-DEFAULT_MEMORY_LIMIT = 1024  # メモリのデフォルトの制限 1024MB
 
 class JudgeStatus(Enum):
-    AC = "AC"  # 正解
-    WA = "WA"  # 不正解
-    TLE = "TLE"  # 制限時間超過
-    MLE = "MLE"  # メモリー超過
-    CE = "CE"  # 実行時エラー
+    AC = "AC"  # 正解 (Accepted)
+    WA = "WA"  # 不正解 (Wrong Answer)
+    TLE = "TLE"  # 制限時間超過 (Time Limit Exceeded)
+    MLE = "MLE"  # メモリー超過 (Memory Limit Exceeded)
+    CE = "CE"  # コンパイルエラー (Compile Error)
+    RE = "RE"  # 実行時エラー (Runtime Error)
+    OLE = "OLE"  # 出力サイズ超過 (Output Limit Exceeded)
+    IE = "IE"  # ジャッジサーバの内部エラー (Internal Error)
 
     def __str__(self):
         return self.value
 
+
 @dataclass
 class JudgeResult:
+    testcase_id: int
     status: JudgeStatus
     timeMS: int
-    memoryMB: int
+    memoryKB: int
     exitCode: int
     stdout: str
     stderr: str
 
-class JudgeSummary:
-    status: JudgeStatus
-    
+
+@dataclass
+class ProblemInfo:
+    lecture_id: int
+    assignment_id: int
+    for_evaluation: bool
+
 
 class JudgeInfo:
-    schema: dict
-    judge_data: dict
-    volume: Volume
-    directory_path: Path  # 課題のディレクトリの絶対パス
-    requiredFiles: list[str]
-    buildCommands: list[str]
-    executable: str
-    timeLimitS: int
-    memoryLimitMB: int
-    testCases: list[
-        dict
-    ]  # [{"input": "input.txt", "output": "output.txt", "checker": "exact", "exitCode": 0}, ...]
+    submission_id: int
+    problem_info: ProblemInfo
+    required_files: list[str]  # ユーザに提出を求められているソースコードの名前リスト
+    arranged_filepaths: list[
+        Path
+    ]  # こちらが用意しているソースコードのファイルパスのリスト
+    uploaded_filepaths: list[Path]  # ユーザが提出したソースコードのファイルパスのリスト
 
-    def __init__(self, directory_path: str) -> None:
-        """
-        directory_path: PATH_TO_TASK_DIR("./task_dir")から見た、課題のディレクトリの相対パス
-        """
-        # jsonschema.execptions.ValidationErrorが発生する場合があるのでJudgeInfoインスタンスを生成するときはtry-exceptで囲むこと
-        with open(PATH_TO_SCHEMA, "r") as f:
-            self.schema = json.load(f)
+    entire_status: JudgeStatus  # テストケース全体のジャッジ結果
 
-        # directory_pathを絶対パスに変換
-        self.directory_path = (PATH_TO_TASK_DIR / directory_path).resolve()
+    testcases: list[TestCases]  # 実行しなくてはならないテストケースの情報
 
-        task_yaml_path = self.directory_path / "task.yaml"
-
-        with open(task_yaml_path, "r") as f:
-            self.judge_data = yaml.load(f, Loader=yaml.CLoader)
-
-        validate(self.judge_data, self.schema)
-
-        self.requiredFiles = self.judge_data["requiredFiles"]
-        # 相対パスを絶対パスに変換
-        for i in range(len(self.requiredFiles)):
-            self.requiredFiles[i] = (
-                self.directory_path / self.requiredFiles[i]
-            ).resolve()
-
-        self.buildCommands = self.judge_data["build"]
-        # buildCommandsを&&でつなげる
-        # 例) ["g++ -o a.out main.cpp", "g++ -o b.out main.cpp"] -> "g++ -o a.out main.cpp && g++ -o b.out main.cpp"
-        self.buildCommands = " && ".join(self.buildCommands)
-        # splitする
-        # 例) "g++ -o a.out main.cpp && g++ -o b.out main.cpp" -> ["g++", "-o", "a.out", "main.cpp", "&&", "g++", "-o", "b.out", "main.cpp"]
-        self.buildCommands = self.buildCommands.split(" ")
-
-        self.executable = self.judge_data["executable"]
-
-        self.timeLimitS = self.judge_data["timeS"]
-        self.memoryLimitMB = self.judge_data["memoryMB"]
-
-        self.testCases = self.judge_data["testCases"]
-        # testCases内のファイルパスを絶対パスに変換
-        for i in range(len(self.testCases)):
-            self.testCases[i]["input"] = (
-                self.directory_path / self.testCases[i]["input"]
-            ).resolve()
-            self.testCases[i]["output"] = (
-                self.directory_path / self.testCases[i]["output"]
-            ).resolve()
-
-    def __str__(self) -> str:
-        return str(self.judge_data)
-
-    def compile(self) -> tuple[TaskResult, Error]:
-        self.volume, err = Volume.create()
-        if err.message != "":
-            return (TaskResult(), err)
-
-        # 必要なファイルをボリュームにコピー
-        err = self.volume.copyFiles(
-            filePathsFromClient=self.requiredFiles, DirPathInVolume="./"
+    def __init__(
+        self,
+        submission_id: int,
+        lecture_id: int,
+        assignment_id: int,
+        for_evaluation: bool,
+    ):
+        self.submission_id = submission_id
+        self.problem_info = ProblemInfo(
+            lecture_id=lecture_id,
+            assignment_id=assignment_id,
+            for_evaluation=for_evaluation,
         )
 
-        if err.message != "":
-            return (TaskResult(), err)
+        db = SessionLocal()
 
-        # TODO: 複数言語に対応する
-        task = TaskInfo(
-            name="checker-lang-gcc",
-            arguments=self.buildCommands,
-            timeout=COMPILE_TIMEOUT,
-            workDir="/workdir/",
-            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=self.volume)],
-            memoryLimitMB=DEFAULT_MEMORY_LIMIT,
-            pidsLimit=DEFAULT_PIDS_LIMIT,
+        # Get required file names
+        self.required_files = fetch_required_files(
+            db=db,
+            lecture_id=lecture_id,
+            assignment_id=assignment_id,
+            for_evaluation=for_evaluation,
         )
 
-        result, err = task.run()
-
-        if err.message != "":
-            return (TaskResult(), err)
-
-        # ボリューム内のソースコードを削除
-        filePathsInVolume: list[str] = [
-            str(Path("./") / Path(requiredFile).name)
-            for requiredFile in self.requiredFiles
+        # Get arranged filepaths
+        self.arranged_filepaths = [
+            RESOURCE_DIR / filepath
+            for filepath in fetch_arranged_filepaths(
+                db=db,
+                lecture_id=lecture_id,
+                assignment_id=assignment_id,
+                for_evaluation=for_evaluation,
+            )
         ]
-        err = self.volume.removeFiles(filePathsInVolume)
 
-        if err.message != "":
-            return (result, err)
+        # Get uploaded filepaths
+        self.uploaded_filepaths = [
+            RESOURCE_DIR / fetch_arranged_filepaths
+            for filepath in fetch_uploaded_filepaths(db=db, submission_id=submission_id)
+        ]
 
-        return (result, Error(""))
-
-    def __run(self, input_path: str) -> tuple[TaskResult, Error]:
-        # 一つの入出力例に対してサンドボックス実行する
-        # input_path: 入力ファイルの絶対パス
-        # output_path: 出力ファイルの絶対パス
-        # 前提: 入力ファイルは既にボリュームにコピーされている
-        # sandbox内で実行する
-
-        # 実行コマンドを作成
-        # ex. ["./a.out", "<", "input.txt"]
-        # 出力は実行結果から取得する
-        command = [("./" + self.executable), "<", Path(input_path).name]
-
-        task = TaskInfo(
-            name="binary-runner",
-            arguments=command,
-            timeout=self.timeLimitS,
-            cpus=1,
-            memoryLimitMB=self.memoryLimitMB,
-            pidsLimit=DEFAULT_PIDS_LIMIT,
-            workDir="/workdir/",
-            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=self.volume)],
+        # Get testcases info
+        self.testcases = fetch_testcases(
+            db=db,
+            lecture_id=lecture_id,
+            assignment_id=assignment_id,
+            for_evaluation=for_evaluation,
         )
 
-        result, err = task.run()
-
-        if err.message != "":
-            return (TaskResult(), err)
-
-        return (result, Error(""))
-
-    def judge(self) ->
+        self.entire_status = "AC"
