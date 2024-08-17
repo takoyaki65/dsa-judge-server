@@ -1,82 +1,36 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
-import subprocess
-import os
-import zipfile
-from pydantic import BaseModel
-import docker
-import uuid
-import yaml
+from contextlib import asynccontextmanager
+import logging
 
-app = FastAPI()
+import asyncio
+from db.crud import *
+from db.models import *
+from db.database import SessionLocal
 
-# Dockerクライアントの設定
-client = docker.DockerClient(base_url="unix:///var/run/docker.sock")
-
-class Volume(BaseModel):
-    Name: str # ボリューム名
-
-class VolumeMountInfo(BaseModel):
-    Path: str # ホストのパス
-    Volume: Volume # ボリューム情報
-
-class TaskInfo(BaseModel):
-    Name: str # コンテナ名 e.g. ubuntu
-    Argments: list[str] # docker createに渡す追加の引数
-    Timeout: int # タイムアウト時間[ms]
-    Cpuset: int # CPUの割り当て
-    MemoryLimitMB: int # メモリの割り当て[MB]
-    StackLimitKB: int # スタックの割り当て[KB], -1で無制限
-    PidsLimit: int # プロセス数の制限
-    EnableNetwork: bool # ネットワークの有効化
-    EnableLoggingDriver: bool # ロギングドライバの有効化
-    WorkDir: str # 作業ディレクトリ
-    cgroupParent: str # cgroupの親ディレクトリ
-
-class Task(BaseModel):
-    container_name: str
-    task_info: dict
-    result: dict
+logger = logging.getLogger("uvicorn")
 
 
-# associative array of Task objects
-tasks: dict[str, Task] = {}
+async def process_judge_requests():
+    while True:
+        with SessionLocal() as db:
+            queued_submissions = fetch_queued_judge(db, 10)  # 10件ずつ取得
+            if queued_submissions:
+                logger.info(
+                    f"{len(queued_submissions)}件のジャッジリクエストを取得しました。"
+                )
+                # ここでジャッジ処理を実行する（実装は省略）
+            else:
+                logger.info("キューにジャッジリクエストはありません。")
+
+        await asyncio.sleep(5)  # 500ミリ秒待機
 
 
-@app.post("/task")
-async def create_task(task: UploadFile = File(...)):
-    task_id = str(uuid.uuid4())
-    task_path = f"/tmp/{task_id}"
-    os.makedirs(task_path, exist_ok=True)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(process_judge_requests())
+    yield
+    # TODO: statusをrunningにしてしまっているタスクをqueuedに戻す
+    # そして途中結果を削除する
+    task.cancel()
 
-    # ファイルの保存
-    with open(f"{task_path}/{task.filename}", "wb") as buffer:
-        buffer.write(await task.read())
-
-    # zipファイルの解凍
-    with zipfile.ZipFile(f"{task_path}/{task.filename}", "r") as zip_ref:
-        zip_ref.extractall(task_path)
-
-    # Dockerコンテナの作成と起動
-    container_name = f"dsa_sandbox_{task_id}"
-    command = f"docker run --name {container_name} -v {task_path}:/app -d dsa_sandbox"
-    try:
-        subprocess.run(command, shell=True, check=True)
-    except subprocess.CalledProcessError:
-        raise HTTPException(status_code=500, detail="Failed to create container")
-
-    # task.yamlの読み込み
-    with open(f"{task_path}/task.yaml", "r", encoding="utf8") as file:
-        task_info = yaml.safe_load(file)
-
-    tasks[task_id] = Task(container_name=container_name, task_info=task_info, result={})
-
-    return {"task_id": task_id}
-
-
-@app.get("task/{task_id}")
-def get_task_status(task_id: str):
-    if task_id not in tasks:
-        raise HTTPException(status_code=404, detail="Task not found")
-    container_id = tasks[task_id]
-    container = client.containers.get(container_id)
-    return {"status": container.status, "logs": container.logs().decode("utf-8")}
+app = FastAPI(lifespan=lifespan)
