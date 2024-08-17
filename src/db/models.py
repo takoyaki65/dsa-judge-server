@@ -81,7 +81,7 @@ class Submission(Base):
     lecture_id = Column(Integer, ForeignKey('Problem.lecture_id'))
     assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'))
     for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'))
-    status = Column(Enum('queued', 'running', 'done', 'CE'), default='queued')
+    status = Column(Enum('queued', 'running', 'done', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='queued')
 
 class UploadedFiles(Base):
     __tablename__ = 'UploadedFiles'

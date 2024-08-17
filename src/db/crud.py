@@ -12,6 +12,15 @@ def fetch_queued_judge(db: Session, n: int) -> list[models.Submission]:
     db.commit()
     return submissions
 
+# lecture_id, assignment_id, for_evaluationのデータから、それに対応するProblemデータ(実行ファイル名、制限リソース量)を取得する
+def fetch_problem(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> models.Problem | None:
+    problem = db.query(models.Problem).filter(models.Problem.lecture_id == lecture_id,
+                                              models.Problem.assignment_id == assignment_id,
+                                              models.Problem.for_evaluation == for_evaluation
+                                              ).first()
+    
+    return problem
+
 # ジャッジリクエストに紐づいている、アップロードされたファイルのパスのリストをUploadedFiles
 # テーブルから取得して返す
 def fetch_uploaded_filepaths(db: Session, submission_id: int) -> list[str]:
@@ -45,13 +54,27 @@ def fetch_testcases(db: Session, lecture_id: int, assignment_id: int, for_evalua
     ).all()
 
 # 特定のテストケースに対するジャッジ結果をJudgeResultテーブルに登録する
-def register_judge_result(db: Session, submission_id: int, testcase_id: int, timeMS: int, memoryKB: int, result: str) -> None:
+def register_judge_result(db: Session, submission_id: int, testcase_id: int, timeMS: int, memoryKB: int, exit_code: int, stdout: str, stderr: str, result: str) -> None:
     judge_result = models.JudgeResult(
         submission_id=submission_id,
         testcase_id=testcase_id,
         timeMS=timeMS,
         memoryKB=memoryKB,
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr=stderr,
         result=result
     )
     db.add(judge_result)
     db.commit()
+    
+# 特定のsubmission_idに対応するジャッジリクエストの全体statusを変更する
+# 注意: statusには'pending', 'queued', 'running', 'done', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入れる
+def update_submission_status(db: Session, submission_id: int, status: str) -> None:
+    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if submission:
+        submission.status = status
+        db.commit()
+    else:
+        raise ValueError(f"Submission with id {submission_id} not found")
+    
