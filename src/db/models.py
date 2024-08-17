@@ -46,7 +46,7 @@ class TestCases(Base):
     lecture_id = Column(Integer, ForeignKey('Problem.lecture_id'))
     assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'))
     for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'))
-    type = Column(Enum('preBuilt', 'postBuilt', 'Judge'))
+    type = Column(Enum('preBuilt', 'postBuilt', 'Judge'), nullable=False)
     description = Column(String)
     score = Column(Integer)
     script_path = Column(String(255))

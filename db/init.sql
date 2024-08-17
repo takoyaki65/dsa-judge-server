@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS TestCases (
     lecture_id INT, -- 何回目の授業で出される課題か, e.g., 1, 2, ...
     assignment_id INT, -- 何番目の課題か, e.g., 1, 2, ...
     for_evaluation BOOLEAN, -- 課題採点用かどうか, True/False
-    type ENUM('preBuilt', 'postBuilt', 'Judge'), -- テストケースが実行されるタイミング
+    type ENUM('preBuilt', 'postBuilt', 'Judge') NOT NULL, -- テストケースが実行されるタイミング
     description TEXT, -- どの部分点に相当するかの説明
     score INT, -- テストケースの配点, フォーマットチェック用だったらゼロ
     script_path VARCHAR(255), -- ./<実行バイナリ> の形式に合わない場合のスクリプトファイルのパス
