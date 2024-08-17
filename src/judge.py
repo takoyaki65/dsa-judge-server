@@ -4,6 +4,7 @@ from sandbox.execute import Volume
 from sandbox.my_error import Error
 from sandbox.execute import TaskInfo
 from sandbox.execute import VolumeMountInfo
+from sqlalchemy.orm import Session
 from sandbox.execute import TaskResult
 from dotenv import load_dotenv
 from db.models import TestCases, Problem
@@ -17,6 +18,7 @@ from db.crud import (
     fetch_uploaded_filepaths,
 )
 from db.database import SessionLocal
+from checker import StandardChecker
 import os
 from enum import Enum
 
@@ -25,7 +27,7 @@ load_dotenv()
 RESOURCE_DIR = Path(os.getenv("RESOURCE_PATH"))
 
 
-class JudgeStatus(Enum):
+class JudgeStatusFlag(Enum):
     AC = "AC"  # 正解 (Accepted)
     WA = "WA"  # 不正解 (Wrong Answer)
     TLE = "TLE"  # 制限時間超過 (Time Limit Exceeded)
@@ -39,10 +41,33 @@ class JudgeStatus(Enum):
         return self.value
 
 
+StatusOrder = {
+    "AC": 1,
+    "WA": 2,
+    "TLE": 3,
+    "MLE": 4,
+    "RE": 5,
+    "CE": 6,
+    "OLE": 7,
+    "IE": 8,
+}
+
+
+class JudgeStatus:
+    flag: JudgeStatusFlag
+
+    def __init__(self, flag: JudgeStatusFlag):
+        self.flag = flag
+
+    def update(self, flag: JudgeStatusFlag) -> None:
+        if StatusOrder[self.flag.__str__()] < StatusOrder[flag.__str__()]:
+            self.flag = flag
+
+
 @dataclass
 class JudgeResult:
     testcase_id: int
-    status: JudgeStatus
+    status: JudgeStatusFlag
     timeMS: int
     memoryKB: int
     exitCode: int
@@ -70,7 +95,7 @@ class JudgeInfo:
     ]  # こちらが用意しているソースコードのファイルパスのリスト
     uploaded_filepaths: list[Path]  # ユーザが提出したソースコードのファイルパスのリスト
 
-    entire_status: JudgeStatus  # テストケース全体のジャッジ結果
+    entire_status: JudgeStatusFlag  # テストケース全体のジャッジ結果
 
     prebuilt_testcases: list[TestCases]
 
@@ -163,9 +188,96 @@ class JudgeInfo:
 
         return (docker_volume, Error.Nothing())
 
+    def _exec_result_check(
+        self,
+        db: Session,
+        testcase: TestCases,
+        result: TaskResult,
+        expected_stdout: str,
+        expected_stderr: str,
+    ) -> JudgeStatus:
+        status: JudgeStatus = JudgeStatus(JudgeStatusFlag.AC)
+        # TLEチェック
+        if result.TLE:
+            register_judge_result(
+                db=db,
+                submission_id=self.submission_id,
+                testcase_id=testcase.id,
+                timeMS=result.timeMS,
+                memoryKB=result.memoryByte / 1024,
+                exit_code=result.exitCode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                result="TLE",
+            )
+            status.update(JudgeStatusFlag.TLE)
+            return status
+        # MLEチェック
+        elif result.memoryByte + 1024 * 1024 > 512 * 1024 * 1024:
+            register_judge_result(
+                db=db,
+                submission_id=self.submission_id,
+                testcase_id=testcase.id,
+                timeMS=result.timeMS,
+                memoryKB=result.memoryByte / 1024,
+                exit_code=result.exitCode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                result="MLE",
+            )
+            status.update(JudgeStatusFlag.MLE)
+            return status
+        # RE(Runtime Errorチェック)
+        elif result.exitCode != testcase.exit_code:
+            register_judge_result(
+                db=db,
+                submission_id=self.submission_id,
+                testcase_id=testcase.id,
+                timeMS=result.timeMS,
+                memoryKB=result.memoryByte / 1024,
+                exit_code=result.exitCode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                result="RE",
+            )
+            status.update(JudgeStatusFlag.RE)
+            return status
+        # Wrong Answerチェック
+        elif StandardChecker.check(
+            expected_stdout, result.stdout
+        ) and StandardChecker.check(expected_stderr, result.stderr):
+            register_judge_result(
+                db=db,
+                submission_id=self.submission_id,
+                testcase_id=testcase.id,
+                timeMS=result.timeMS,
+                memoryKB=result.memoryByte / 1024,
+                exit_code=result.exitCode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                result="AC",
+            )
+            status.update(JudgeStatusFlag.AC)
+            return status
+        else:
+            register_judge_result(
+                db=db,
+                submission_id=self.submission_id,
+                testcase_id=testcase.id,
+                timeMS=result.timeMS,
+                memoryKB=result.memoryByte / 1024,
+                exit_code=result.exitCode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                result="WA",
+            )
+            status.update(JudgeStatusFlag.WA)
+            return status
+
     def _prebuilt_check(self) -> JudgeStatus:
         assert self.problem_record is not None
         db = SessionLocal()
+        summary_status: JudgeStatus = JudgeStatus(JudgeStatusFlag.AC)
         for testcase in self.prebuilt_testcases:
             # ボリューム作成
             volume, err = self._create_complete_volume()
@@ -181,7 +293,7 @@ class JudgeInfo:
                     stderr=err.message,
                     result="IE",
                 )
-                return JudgeStatus.IE
+                return JudgeStatus(JudgeStatusFlag.IE)
 
             args = []
 
@@ -196,7 +308,77 @@ class JudgeInfo:
                 # そうでないなら通常のexecutablesに変更
                 args = [str(Path("./") / self.problem_record.executable)]
 
-            # 引数をargに追加する
+            stdin: str = ""
+            expected_stdout: str = ""
+            expected_stderr: str = ""
+
+            try:
+                # 引数をargに追加する
+                with open(
+                    RESOURCE_DIR / testcase.argument_path, "r", encoding="utf-8"
+                ) as f:
+                    arguments = f.read().strip().split()
+                    args.extend(arguments)
+
+                # stdin, expected_stdout, expected_stderrを読み込む
+                if testcase.stdin_path is not None:
+                    with open(
+                        RESOURCE_DIR / testcase.stdin_path, "r", encoding="utf-8"
+                    ) as f:
+                        stdin = f.read()
+                else:
+                    stdin = ""
+
+                with open(
+                    RESOURCE_DIR / testcase.stdout_path, "r", encoding="utf-8"
+                ) as f:
+                    expected_stdout = f.read()
+
+                with open(
+                    RESOURCE_DIR / testcase.stderr_path, "r", encoding="utf-8"
+                ) as f:
+                    expected_stderr = f.read()
+
+            except FileNotFoundError:
+                register_judge_result(
+                    db=db,
+                    submission_id=self.submission_id,
+                    testcase_id=testcase.id,
+                    timeMS=0,
+                    memoryKB=0,
+                    exit_code=-1,
+                    stdout="",
+                    stderr=f"ファイルが見つかりません: {FileNotFoundError.filename}",
+                    result="IE",
+                )
+                return JudgeStatus(JudgeStatusFlag.IE)
+
+            # sandbox環境のセットアップ
+            task = TaskInfo(
+                name="ubuntu",
+                arguments=args,
+                workDir="/workdir/",
+                volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
+                timeout=2,
+                memoryLimitMB=512,
+                Stdin=stdin,
+            )
+
+            # sandbox環境で実行
+            result, err = task.run()
+
+            status = self._exec_result_check(
+                db=db,
+                testcase=testcase,
+                result=result,
+                expected_stdout=expected_stdout,
+                expected_stderr=expected_stderr,
+            )
+            
+            summary_status.update(status.flag)
+
+        db.close()
+        return summary_status
 
     def judge(self) -> Error:
         if self.problem_record is None:
