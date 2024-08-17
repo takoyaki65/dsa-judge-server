@@ -99,5 +99,7 @@ class JudgeResult(Base):
     timeMS = Column(Integer, nullable=False)
     memoryKB = Column(Integer, nullable=False)
     exit_code = Column(Integer, nullable=False)
+    stdout = Column(String, nullable=False)
+    stderr = Column(String, nullable=False)
     result = Column(Enum('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), nullable=False)
 
