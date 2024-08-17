@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS JudgeResult (
     testcase_id INT, -- ジャッジ結果に紐づいているテストケースのID
     timeMS INT NOT NULL, -- 実行時間[ms]
     memoryKB INT NOT NULL, -- 消費メモリ[KB]
+    exit_code INT NOT NULL, -- 戻り値
     result ENUM('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') NOT NULL, -- 実行結果のステータス、 AC/WA/TLE/MLE/CE/RE/OLE/IE, 参考: https://atcoder.jp/contests/abc367/glossary
     FOREIGN KEY (submission_id) REFERENCES Submission(id),
     FOREIGN KEY (testcase_id) REFERENCES TestCases(id)

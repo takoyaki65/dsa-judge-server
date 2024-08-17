@@ -98,5 +98,6 @@ class JudgeResult(Base):
     testcase_id = Column(Integer, ForeignKey('TestCases.id'))
     timeMS = Column(Integer, nullable=False)
     memoryKB = Column(Integer, nullable=False)
+    exit_code = Column(Integer, nullable=False)
     result = Column(Enum('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), nullable=False)
 
