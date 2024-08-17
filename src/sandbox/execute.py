@@ -68,7 +68,7 @@ class Volume:
 
         return Error(err)
 
-    def copyFile(self, filePathFromClient: str, filePathInVolume: str) -> Error:
+    def copyFile(self, filePathFromClient: Path, filePathInVolume: Path) -> Error:
         ci = ContainerInfo("")
 
         err = ci.create(
@@ -79,15 +79,19 @@ class Volume:
         )
         if err.message != "":
             return err
+        
+        # filePathInVolumeが絶対パスの場合、相対パスに変換
+        if filePathInVolume.is_absolute():
+            filePathInVolume = Path(".") / filePathInVolume.relative_to("/")
 
-        dstInContainer = Path("/workdir") / Path(filePathInVolume)
-        err = ci.copyFile(filePathFromClient, str(dstInContainer))
+        dstInContainer = Path("/workdir") / filePathInVolume
+        err = ci.copyFile(filePathFromClient, dstInContainer)
 
         ci.remove()
         return err
 
     def copyFiles(
-        self, filePathsFromClient: list[str], DirPathInVolume: str = "./"
+        self, filePathsFromClient: list[Path], DirPathInVolume: Path = Path("./")
     ) -> Error:
         ci = ContainerInfo("")
 
@@ -100,10 +104,14 @@ class Volume:
 
         if err.message != "":
             return err
+        
+        # DirPathInVolumeが絶対パスの場合、相対パスに変換
+        if DirPathInVolume.is_absolute():
+            DirPathInVolume = Path(".") / DirPathInVolume.relative_to("/")
 
         for PathInClient in filePathsFromClient:
             dstInContainer = (
-                Path("/workdir") / Path(DirPathInVolume) / Path(PathInClient).name
+                Path("/workdir") / DirPathInVolume / PathInClient.name
             ).resolve()
             err = ci.copyFile(PathInClient, str(dstInContainer))
             if err.message != "":
@@ -112,11 +120,13 @@ class Volume:
         ci.remove()
         return Error("")
 
-    def removeFiles(self, filePathsInVolume: list[str]) -> Error:
+    def removeFiles(self, filePathsInVolume: list[Path]) -> Error:
         arguments = ["rm"]
 
         for filePath in filePathsInVolume:
-            filePathInContainer = Path("/workdir") / Path(filePath)
+            if filePath.is_absolute():
+                filePath = Path(".") / filePath.relative_to("/")
+            filePathInContainer = Path("/workdir") / filePath
             arguments += [str(filePathInContainer.resolve())]
 
         ci = ContainerInfo("")
@@ -264,8 +274,8 @@ class ContainerInfo:
         return Error(err)
 
     # ファイルのコピー
-    def copyFile(self, srcInHost: str, dstInContainer: str) -> Error:
-        args = ["cp", srcInHost, f"{self.containerID}:{dstInContainer}"]
+    def copyFile(self, srcInHost: Path, dstInContainer: Path) -> Error:
+        args = ["cp", str(srcInHost), f"{self.containerID}:{str(dstInContainer)}"]
 
         cmd = ["docker"] + args
 
