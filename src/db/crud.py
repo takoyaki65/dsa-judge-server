@@ -69,7 +69,7 @@ def register_judge_result(db: Session, submission_id: int, testcase_id: int, tim
     db.commit()
     
 # 特定のsubmission_idに対応するジャッジリクエストの全体statusを変更する
-# 注意: statusには'pending', 'queued', 'running', 'done', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入れる
+# 注意: statusには'pending', 'queued', 'running', 'done'のみ入れる
 def update_submission_status(db: Session, submission_id: int, status: str) -> None:
     submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     if submission:
@@ -77,4 +77,33 @@ def update_submission_status(db: Session, submission_id: int, status: str) -> No
         db.commit()
     else:
         raise ValueError(f"Submission with id {submission_id} not found")
+
+# 特定のsubmission_idに対応するジャッジリクエストのprebuilt_resultを変更する
+# 注意: prebuilt_statusには'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入る
+def update_submission_prebuilt_result(db: Session, submission_id: int, prebuilt_result: str) -> None:
+    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if submission:
+        submission.prebuilt_result = prebuilt_result
+        db.commit()
+    else:
+        raise ValueError(f"Submission with id {submission_id} not found")
+
+# 特定のsubmission_idに対応するジャッジリクエストのpostbuilt_resultを変更する
+# 注意: postbuilt_statusには'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入る
+def update_submission_postbuilt_result(db: Session, submission_id: int, postbuilt_result: str) -> None:
+    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if submission:
+        submission.postbuilt_result = postbuilt_result
+        db.commit()
+    else:
+        raise ValueError(f"Submission with id {submission_id} not found")
     
+# 特定のsubmission_idに対応するジャッジリクエストのjudge_resultを変更する
+# 注意: judge_statusには'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入る
+def update_submission_postbuilt_result(db: Session, submission_id: int, judge_result: str) -> None:
+    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if submission:
+        submission.judge_result = judge_result
+        db.commit()
+    else:
+        raise ValueError(f"Submission with id {submission_id} not found")
