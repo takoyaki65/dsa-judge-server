@@ -82,9 +82,9 @@ class Submission(Base):
     assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'))
     for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'))
     status = Column(Enum('pending', 'queued', 'running', 'done'), default='pending')
-    prebuilt_result = Column(Enum('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'))
-    postbuilt_result = Column(Enum('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'))
-    judge_result = Column(Enum('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'))
+    prebuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
+    postbuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
+    judge_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
 
 class UploadedFiles(Base):
     __tablename__ = 'UploadedFiles'

@@ -140,9 +140,9 @@ CREATE TABLE IF NOT EXISTS Submission (
     assignment_id INT, -- 何番目の課題か, e.g., 1, 2, ...
     for_evaluation BOOLEAN, -- 課題採点用かどうか, True/False
     status ENUM('pending', 'queued', 'running', 'done') DEFAULT 'pending', -- リクエストの処理状況, pending/queued/running/done
-    prebuilt_result ENUM('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), -- prebuiltチェックの結果
-    postbuilt_result ENUM('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), -- postbuiltチェックの結果
-    judge_result ENUM('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), -- ジャッジ結果
+    prebuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- prebuiltチェックの結果
+    postbuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- postbuiltチェックの結果
+    judge_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- ジャッジ結果
     FOREIGN KEY (batch_id) REFERENCES BatchSubmission(id),
     FOREIGN KEY (student_id) REFERENCES Student(id),
     FOREIGN KEY (lecture_id, assignment_id, for_evaluation) REFERENCES Problem(lecture_id, assignment_id, for_evaluation)
