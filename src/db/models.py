@@ -85,6 +85,7 @@ class Submission(Base):
     prebuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
     postbuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
     judge_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
+    message = Column(String(255), default='')
 
 class UploadedFiles(Base):
     __tablename__ = 'UploadedFiles'

@@ -107,3 +107,12 @@ def update_submission_postbuilt_result(db: Session, submission_id: int, judge_re
         db.commit()
     else:
         raise ValueError(f"Submission with id {submission_id} not found")
+
+# 特定のsubmission_idに対応するジャッジリクエストのmessageを変更する。
+def update_submission_message(db: Session, submission_id: int, message: str) -> None:
+    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if submission:
+        submission.message = message
+        db.commit()
+    else:
+        raise ValueError(f"Submission with id {submission_id} not found")

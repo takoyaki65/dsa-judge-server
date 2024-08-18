@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS Submission (
     prebuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- prebuiltチェックの結果
     postbuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- postbuiltチェックの結果
     judge_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- ジャッジ結果
+    message VARCHAR(255) DEFAULT '',
     FOREIGN KEY (batch_id) REFERENCES BatchSubmission(id),
     FOREIGN KEY (student_id) REFERENCES Student(id),
     FOREIGN KEY (lecture_id, assignment_id, for_evaluation) REFERENCES Problem(lecture_id, assignment_id, for_evaluation)
