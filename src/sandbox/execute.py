@@ -160,6 +160,38 @@ class Volume:
 
         ci.remove()
         return Error("")
+    
+    def clone(self) -> tuple["Volume", Error]:
+        # 新しいDockerボリュームを作成
+        new_volume, err = Volume.create()
+        if err.message != "":
+            return Volume(""), Error(f"新しいボリュームの作成に失敗しました: {err.message}")
+
+        # 元のボリュームの内容を新しいボリュームにコピー
+        ci = ContainerInfo("")
+        err = ci.create(
+            containerName="ubuntu",
+            arguments=["cp", "-a", "/src/.", "/dst/"],
+            workDir="/",
+            volumeMountInfo=[
+                VolumeMountInfo(path="/src", volume=self),
+                VolumeMountInfo(path="/dst", volume=new_volume)
+            ]
+        )
+        if err.message != "":
+            return Volume(""), Error(f"コンテナの作成に失敗しました: {err.message}")
+
+        # コンテナを起動してコピーを実行
+        command = ["docker", "start", "-a", ci.containerID]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        
+        if result.returncode != 0:
+            return Volume(""), Error(f"ボリュームのコピーに失敗しました: {result.stderr}")
+
+        # コンテナを削除
+        ci.remove()
+
+        return new_volume, Error("")
 
 
 @dataclass

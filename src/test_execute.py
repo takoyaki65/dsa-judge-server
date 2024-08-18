@@ -305,6 +305,51 @@ def test_RemoveFilesInVolume():
     assert err.message == ""
 
 
+# ボリュームのクローンができているかチェック
+def test_CloneVolume():
+    # 一時ディレクトリを作成
+    with TemporaryDirectory() as temp_dir:
+        # テストファイルを作成
+        file1_path = Path(temp_dir) / "file1.txt"
+        file2_path = Path(temp_dir) / "file2.txt"
+        with open(file1_path, "w") as f1, open(file2_path, "w") as f2:
+            f1.write("Content of file1")
+            f2.write("Content of file2")
+
+        # 元のボリュームを作成
+        original_volume, err = Volume.create()
+        assert err.message == ""
+
+        # テストファイルを元のボリュームにコピー
+        err = original_volume.copyFile(Path(file1_path), Path("file1.txt"))
+        assert err.message == ""
+        err = original_volume.copyFile(Path(file2_path), Path("file2.txt"))
+        assert err.message == ""
+
+        # ボリュームをクローン
+        cloned_volume, err = original_volume.clone()
+        assert err.message == ""
+
+        # クローンされたボリュームの内容を確認
+        task = TaskInfo(
+            name="ubuntu",
+            arguments=["ls"],
+            workDir="/workdir/",
+            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=cloned_volume)],
+        )
+
+        result, err = task.run()
+        assert err.message == ""
+        assert result.exitCode == 0
+        assert "file1.txt" in result.stdout
+        assert "file2.txt" in result.stdout
+
+        # クリーンアップ
+        err = original_volume.remove()
+        assert err.message == ""
+        err = cloned_volume.remove()
+        assert err.message == ""
+
 # メモリ制限を検出できるかチェック
 def test_MemoryLimit():
     task = TaskInfo(
