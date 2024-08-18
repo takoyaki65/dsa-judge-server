@@ -81,7 +81,10 @@ erDiagram
 		Int lecture_id FK "何回目の授業で出される課題か, e.g., 1, 2, ..."
 		Int assignment_id FK "何番目の課題か, e.g., 1, 2, ..."
 		Boolean for_evaluation FK "課題採点用かどうか, True/False"
-		Enum status "リクエストの処理状況, pending/queued/running/done/failed"
+		Enum status "リクエストの処理状況, pending/queued/running/done"
+		Enum prebuilt_result "コンパイル前のチェック結果, nullable"
+		Enum postbuilt_result "コンパイル後のチェック結果, nullable"
+		Enum judge_result "ジャッジ結果, nullable"
 	}
 	UploadedFiles {
 		Int id PK "アップロードされたファイルのID(auto increment)"
