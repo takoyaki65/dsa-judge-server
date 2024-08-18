@@ -100,7 +100,7 @@ def update_submission_postbuilt_result(db: Session, submission_id: int, postbuil
     
 # 特定のsubmission_idに対応するジャッジリクエストのjudge_resultを変更する
 # 注意: judge_statusには'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入る
-def update_submission_postbuilt_result(db: Session, submission_id: int, judge_result: str) -> None:
+def update_submission_judge_result(db: Session, submission_id: int, judge_result: str) -> None:
     submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     if submission:
         submission.judge_result = judge_result

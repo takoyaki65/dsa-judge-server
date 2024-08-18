@@ -8,8 +8,13 @@ from sqlalchemy.orm import Session
 from sandbox.execute import TaskResult
 from dotenv import load_dotenv
 from db.models import TestCases, Problem
+import logging
 from db.crud import (
     update_submission_status,
+    update_submission_message,
+    update_submission_prebuilt_result,
+    update_submission_postbuilt_result,
+    update_submission_judge_result,
     register_judge_result,
     fetch_problem,
     fetch_required_files,
@@ -21,6 +26,10 @@ from db.database import SessionLocal
 from checker import StandardChecker
 import os
 from enum import Enum
+
+# ロガーの設定
+logging.basicConfig(level=logging.INFO)
+test_logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -95,7 +104,7 @@ class JudgeInfo:
     ]  # こちらが用意しているソースコードのファイルパスのリスト
     uploaded_filepaths: list[Path]  # ユーザが提出したソースコードのファイルパスのリスト
 
-    entire_status: JudgeStatusFlag  # テストケース全体のジャッジ結果
+    entire_status: JudgeStatus  # テストケース全体のジャッジ結果
 
     prebuilt_testcases: list[TestCases]
 
@@ -170,7 +179,7 @@ class JudgeInfo:
             else:
                 self.judge_testcases.append(testcase)
 
-        self.entire_status = "AC"
+        self.entire_status = JudgeStatus(JudgeStatusFlag.AC)
         db.close()
 
     def _create_complete_volume(self) -> tuple[Volume, Error]:
@@ -188,7 +197,7 @@ class JudgeInfo:
 
         return (docker_volume, Error.Nothing())
 
-    def _exec_result_check(
+    def _result_check_and_register(
         self,
         db: Session,
         testcase: TestCases,
@@ -273,14 +282,14 @@ class JudgeInfo:
             )
             status.update(JudgeStatusFlag.WA)
             return status
-
-    def _prebuilt_check(self) -> JudgeStatus:
+    
+    def _exec_checker(self, testcase_list: list[TestCases], initial_volume: Volume, container_name: str, timeoutSec: int, memoryLimitMB: int) -> JudgeStatus:
         assert self.problem_record is not None
         db = SessionLocal()
         summary_status: JudgeStatus = JudgeStatus(JudgeStatusFlag.AC)
-        for testcase in self.prebuilt_testcases:
+        for testcase in testcase_list:
             # ボリューム作成
-            volume, err = self._create_complete_volume()
+            volume, err = initial_volume.clone()
             if not err.silence():
                 register_judge_result(
                     db=db,
@@ -291,35 +300,34 @@ class JudgeInfo:
                     exit_code=-1,
                     stdout="",
                     stderr=err.message,
-                    result="IE",
+                    result="IE"
                 )
-                return JudgeStatus(JudgeStatusFlag.IE)
-
+                summary_status.update(JudgeStatusFlag.IE)
+                continue
+            
             args = []
-
+            
             # スクリプトが要求されるならそれをボリュームにコピー
             if testcase.script_path is not None:
                 volume.copyFile(
                     RESOURCE_DIR / testcase.script_path,
-                    Path("./") / Path(testcase.script_path).name,
+                    Path("./") / Path(testcase.script_path).name
                 )
                 args = [str(Path("./") / Path(testcase.script_path).name)]
             else:
-                # そうでないなら通常のexecutablesに変更
+                # そうでないなら通常のexecutableをargsに追加
                 args = [str(Path("./") / self.problem_record.executable)]
-
+            
             stdin: str = ""
             expected_stdout: str = ""
             expected_stderr: str = ""
-
+            
             try:
                 # 引数をargに追加する
-                with open(
-                    RESOURCE_DIR / testcase.argument_path, "r", encoding="utf-8"
-                ) as f:
+                with open(RESOURCE_DIR / testcase.argument_path, "r", encoding='utf-8') as f:
                     arguments = f.read().strip().split()
                     args.extend(arguments)
-
+                    
                 # stdin, expected_stdout, expected_stderrを読み込む
                 if testcase.stdin_path is not None:
                     with open(
@@ -338,7 +346,7 @@ class JudgeInfo:
                     RESOURCE_DIR / testcase.stderr_path, "r", encoding="utf-8"
                 ) as f:
                     expected_stderr = f.read()
-
+        
             except FileNotFoundError:
                 register_judge_result(
                     db=db,
@@ -351,23 +359,28 @@ class JudgeInfo:
                     stderr=f"ファイルが見つかりません: {FileNotFoundError.filename}",
                     result="IE",
                 )
-                return JudgeStatus(JudgeStatusFlag.IE)
-
+                summary_status.update(JudgeStatusFlag.IE)
+                # ボリュームを削除
+                err = volume.remove()
+                if not err.silence():
+                    test_logger.info(f"failed to remove volume: {volume.name}")
+                continue
+            
             # sandbox環境のセットアップ
             task = TaskInfo(
-                name="ubuntu",
+                name=container_name,
                 arguments=args,
                 workDir="/workdir/",
                 volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
-                timeout=2,
-                memoryLimitMB=512,
+                timeout=timeoutSec,
+                memoryLimitMB=memoryLimitMB,
                 Stdin=stdin,
             )
 
             # sandbox環境で実行
             result, err = task.run()
 
-            status = self._exec_result_check(
+            status = self._result_check_and_register(
                 db=db,
                 testcase=testcase,
                 result=result,
@@ -375,20 +388,119 @@ class JudgeInfo:
                 expected_stderr=expected_stderr,
             )
             
-            summary_status.update(status.flag)
-
+            # ボリュームを削除
+            err = volume.remove()
+            if not err.silence():
+                test_logger.info(f"failed to remove volume: {volume.name}")
+            
+            summary_status.update(status)
+        
         db.close()
         return summary_status
 
+    def _compile(self, working_volume: Volume, container_name: str) -> Error:
+        # コンパイルコマンドの取得
+        args = []
+        try:
+            with open(RESOURCE_DIR / self.problem_record.build_script_path, mode='r', encoding='utf-8') as f:
+                compile_command = f.read().strip().split()
+                args.extend(compile_command)
+        except FileNotFoundError:
+            return Error(f"script for compile commands not found: {self.problem_record.build_script_path}")
+    
+        # sandbox環境のセットアップ
+        task = TaskInfo(
+            name=container_name,
+            arguments=args,
+            workDir="/workdir/",
+            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=working_volume)],
+            timeout=2,
+            memoryLimitMB=512
+        )
+        
+        # sandbox環境で実行
+        result, err = task.run()
+        
+        if not err.silence():
+            return Error(f"compile failed: {result.stderr}")
+        
+        return Error.Nothing()
+
     def judge(self) -> Error:
         if self.problem_record is None:
-            # SubmissionテーブルのstatusをIEに変更
+            # Submissionテーブルのstatusをdoneに変更
             db = SessionLocal()
             update_submission_status(
-                db=db, submission_id=self.submission_id, status="IE"
+                db=db, submission_id=self.submission_id, status="done"
+            )
+            # Submissionテーブルのmessageにエラー文を追加
+            error_message = f"Error on Problem {self.lecture_id}-{self.assignment_id}:{self.for_evaluation}: Not found"
+            update_submission_message(
+                db=db, submission_id=self.submission_id, message=error_message
             )
             db.close()
-            return Error(
-                f"Error on Problem {self.lecture_id}-{self.assignment_id}:{self.for_evaluation}: Not found"
+            return Error(error_message)
+
+        # 1. コンパイル前のチェックを行う
+        # required_files, arranged_filesが入ったボリュームを作る
+        working_volume, err = self._create_complete_volume()
+        if not err.silence():
+            return err
+        # チェッカーを走らせる
+        status = self._exec_checker(testcase_list=self.prebuilt_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=2, memoryLimitMB=512)
+        if status.flag is not JudgeStatusFlag.AC:
+            # 早期終了
+            db = SessionLocal()
+            update_submission_status(
+                db=db, submission_id=self.submission_id, status="done"
             )
+            update_submission_prebuilt_result(
+                db=db, submission_id=self.submission_id, prebuilt_result=status.flag.value
+            )
+            db.close()
+            return Error.Nothing()
+        
+        # 2. コンパイルを行う
+        err = self._compile(working_volume=working_volume, container_name="checker-lang-gcc")
+        
+        if not err.silence():
+            # 早期終了
+            db = SessionLocal()
+            update_submission_status(
+                db=db, submission_id=self.submission_id, status="done"
+            )
+            update_submission_postbuilt_result(
+                db=db, submission_id=self.submission_id, postbuilt_result="CE"
+            )
+            db.close()
+            return Error.Nothing()
+        
+        # 3. コンパイル後のチェックを行う
+        # チェッカーを走らせる
+        status = self._exec_checker(testcase_list=self.postbuilt_testcases, initial_volume=working_volume, container_name="checker-lang-gcc", timeoutSec=2, memoryLimitMB=512)
+        if status.flag is not JudgeStatusFlag.AC:
+            # 早期終了
+            db = SessionLocal()
+            update_submission_status(
+                db=db, submission_id=self.submission_id, status="done"
+            )
+            update_submission_postbuilt_result(
+                db=db, submission_id=self.submission_id, postbuilt_result=status.flag.value
+            )
+            db.close()
+            return Error.Nothing()
+        
+        # 4. ジャッジを行う
+        # チェッカーを走らせる
+        status = self._exec_checker(testcase_list=self.judge_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=self.problem_record.timeMS / 1000, memoryLimitMB=self.problem_record.memoryMB)
+        
+        # ジャッジ結果を登録
+        db = SessionLocal()
+        update_submission_judge_result(
+            db=db, submission_id=self.submission_id, status="done"
+        )
+        update_submission_judge_result(
+            db=db, submission_id=self.submission_id, judge_result=status.flag.value
+        )
+        db.close()
         return Error.Nothing()
