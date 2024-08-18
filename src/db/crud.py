@@ -116,3 +116,22 @@ def update_submission_message(db: Session, submission_id: int, message: str) -> 
         db.commit()
     else:
         raise ValueError(f"Submission with id {submission_id} not found")
+
+# Undo処理: judge-serverをシャットダウンするときに実行する
+# 1. その時点でstatusが"running"になっているジャッジリクエスト(from Submissionテーブル)を
+#    全て"queued"に変更する
+# 2. 変更したジャッジリクエストについて、それに紐づいたJudgeResultを全て削除する
+def undo_running_submissions(db: Session) -> None:
+    # 1. "running"状態のSubmissionを全て取得
+    running_submissions = db.query(models.Submission).filter(models.Submission.status == "running").all()
+    
+    submission_id_list = [submission.id for submission in running_submissions]
+    
+    # すべてのrunning submissionのstatusを"queued"に変更
+    for submission in running_submissions:
+        submission.status = "queued"
+    
+    # 関連するJudgeResultを一括で削除
+    db.query(models.JudgeResult).filter(models.JudgeResult.submission_id.in_(submission_id_list)).delete(synchronize_session=False)
+    # 変更をコミット
+    db.commit()

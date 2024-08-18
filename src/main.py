@@ -29,8 +29,10 @@ async def process_judge_requests():
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(process_judge_requests())
     yield
-    # TODO: statusをrunningにしてしまっているタスクをqueuedに戻す
-    # そして途中結果を削除する
     task.cancel()
+    # statusをrunningにしてしまっているタスクをqueuedに戻す
+    # そして途中結果を削除する
+    with SessionLocal() as db:
+        undo_running_submissions(db)
 
 app = FastAPI(lifespan=lifespan)
