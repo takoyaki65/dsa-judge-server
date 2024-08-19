@@ -1,14 +1,31 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from contextlib import asynccontextmanager
 import logging
-
+from threading import Lock, Thread
+from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from db.crud import *
 from db.models import *
 from db.database import SessionLocal
+from sandbox.my_error import Error
+from judge import JudgeInfo
 
 logger = logging.getLogger("uvicorn")
 
+thread_pool = ThreadPoolExecutor(max_workers=50)
+
+def process_one_judge_request(request: Submission) ->None:
+    judge_info = JudgeInfo(
+        submission_id=request.id,
+        lecture_id=request.lecture_id,
+        assignment_id=request.assignment_id,
+        for_evaluation=request.for_evaluation,
+    )
+    
+    err = judge_info.judge()
+    
+    if not err.silence():
+        logger.error(f"ジャッジ中にエラーが生じました: {err}")
 
 async def process_judge_requests():
     while True:
@@ -18,11 +35,13 @@ async def process_judge_requests():
                 logger.info(
                     f"{len(queued_submissions)}件のジャッジリクエストを取得しました。"
                 )
-                # ここでジャッジ処理を実行する（実装は省略）
+                # スレッドプールを使用して各ジャッジリクエストを処理
+                for submission in queued_submissions:
+                    thread_pool.submit(process_one_judge_request, submission)
             else:
                 logger.info("キューにジャッジリクエストはありません。")
 
-        await asyncio.sleep(5)  # 500ミリ秒待機
+        await asyncio.sleep(5)  # 5秒待機
 
 
 @asynccontextmanager
@@ -30,6 +49,8 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(process_judge_requests())
     yield
     task.cancel()
+    # 現在実行しているジャッジリクエストを最後まで実行し、保留状態のものは破棄する
+    thread_pool.shutdown(wait=True, cancel_futures=True)
     # statusをrunningにしてしまっているタスクをqueuedに戻す
     # そして途中結果を削除する
     with SessionLocal() as db:
