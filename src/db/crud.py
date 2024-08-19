@@ -1,7 +1,10 @@
 # Create, Read, Update and Delete (CRUD)
 from sqlalchemy.orm import Session
+from pathlib import Path
 
 from . import models
+
+#----------------------- for judge server --------------------------------------
 
 # Submissionテーブルから、statusが"queued"のジャッジリクエストを数件取得し、statusを"running"
 # に変え、変更したリクエスト(複数)を返す
@@ -135,3 +138,54 @@ def undo_running_submissions(db: Session) -> None:
     db.query(models.JudgeResult).filter(models.JudgeResult.submission_id.in_(submission_id_list)).delete(synchronize_session=False)
     # 変更をコミット
     db.commit()
+
+# ----------------------- end --------------------------------------------------
+
+# ---------------- for client server -------------------------------------------
+
+# Submissionテーブルにジャッジリクエストを追加する
+def register_judge_request(db: Session, batch_id: int | None, student_id: str, lecture_id: int, assignment_id: int, for_evaluation: bool) -> models.Submission:
+    new_submission = models.Submission(
+        batch_id=batch_id,
+        student_id=student_id,
+        lecture_id=lecture_id,
+        assignment_id=assignment_id,
+        for_evaluation=for_evaluation,
+        # status='pending'
+    )
+    db.add(new_submission)
+    db.commit()
+    db.refresh(new_submission)
+    return new_submission
+
+# アップロードされたファイルをUploadedFilesに登録する
+def register_uploaded_files(db: Session, submission_id: int, path: Path) -> None:
+    new_uploadedfiles = models.UploadedFiles(
+        submission_id=submission_id,
+        path=str(path)
+    )
+    db.add(new_uploadedfiles)
+    db.commit()
+    
+# Submissionテーブルのジャッジリクエストをキューに追加する
+# 具体的にはSubmissionレコードのstatusをqueuedに変更する
+def enqueue_judge_request(db: Session, submission_id: int) -> None:
+    pending_submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    
+    if pending_submission is not None:
+        pending_submission.status = 'queued'
+        db.commit()
+    else:
+        raise ValueError(f"Submission with id {submission_id} not found")
+
+# Submissionテーブルのジャッジリクエストのstatusを確認する
+def fetch_judge_status(db: Session, submission_id: int) -> str:
+    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if submission is None:
+        raise ValueError(f"Submission with {submission_id} not found")
+    return submission.status
+
+# 特定のジャッジリクエストに紐づいたジャッジ結果を取得する
+def fetch_judge_results(db: Session, submission_id: int) -> list[models.JudgeResult]:
+    judge_results = db.query(models.JudgeResult).filter(models.JudgeResult.submission_id == submission_id).all()
+    return judge_results
