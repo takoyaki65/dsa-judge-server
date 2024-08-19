@@ -347,7 +347,7 @@ class JudgeInfo:
                 ) as f:
                     expected_stderr = f.read()
         
-            except FileNotFoundError:
+            except FileNotFoundError as e:
                 register_judge_result(
                     db=db,
                     submission_id=self.submission_id,
@@ -356,7 +356,7 @@ class JudgeInfo:
                     memoryKB=0,
                     exit_code=-1,
                     stdout="",
-                    stderr=f"ファイルが見つかりません: {FileNotFoundError.filename}",
+                    stderr=f"ファイルが見つかりません: {e.filename}",
                     result="IE",
                 )
                 summary_status.update(JudgeStatusFlag.IE)

@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from contextlib import asynccontextmanager
 import logging
-from threading import Lock, Thread
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from db.crud import *
@@ -29,26 +28,31 @@ def process_one_judge_request(request: Submission) ->None:
 
 async def process_judge_requests():
     while True:
-        with SessionLocal() as db:
-            queued_submissions = fetch_queued_judge(db, 10)  # 10件ずつ取得
-            if queued_submissions:
-                logger.info(
-                    f"{len(queued_submissions)}件のジャッジリクエストを取得しました。"
-                )
-                # スレッドプールを使用して各ジャッジリクエストを処理
-                for submission in queued_submissions:
-                    thread_pool.submit(process_one_judge_request, submission)
-            else:
-                logger.info("キューにジャッジリクエストはありません。")
+        try:
+            with SessionLocal() as db:
+                queued_submissions = fetch_queued_judge(db, 10)  # 10件ずつ取得
+                if queued_submissions:
+                    logger.info(
+                        f"{len(queued_submissions)}件のジャッジリクエストを取得しました。"
+                    )
+                    # スレッドプールを使用して各ジャッジリクエストを処理
+                    for submission in queued_submissions:
+                        thread_pool.submit(process_one_judge_request, submission)
+                else:
+                    logger.info("キューにジャッジリクエストはありません。")
+        except Exception as e:
+            logger.info(f"{type(e)} exception detected: \"{e}\"cannot connect to db, maybe it is not ready.")
 
         await asyncio.sleep(5)  # 5秒待機
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("LIFESPAN LOGIC INITIALIZED...")
     task = asyncio.create_task(process_judge_requests())
     yield
     task.cancel()
+    logger.info("LIFESPAN LOGIC DEACTIVATED...")
     # 現在実行しているジャッジリクエストを最後まで実行し、保留状態のものは破棄する
     thread_pool.shutdown(wait=True, cancel_futures=True)
     # statusをrunningにしてしまっているタスクをqueuedに戻す
