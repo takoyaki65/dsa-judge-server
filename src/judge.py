@@ -494,6 +494,11 @@ class JudgeInfo:
         # チェッカーを走らせる
         status = self._exec_checker(testcase_list=self.judge_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=self.problem_record.timeMS / 1000, memoryLimitMB=self.problem_record.memoryMB)
         
+        # ボリュームを削除
+        err = working_volume.remove()
+        if not err.silence():
+            test_logger.info(f"failed to remove volume: {working_volume.name}")
+        
         # ジャッジ結果を登録
         db = SessionLocal()
         update_submission_judge_result(
