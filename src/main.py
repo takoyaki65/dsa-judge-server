@@ -9,19 +9,23 @@ from db.database import SessionLocal
 from sandbox.my_error import Error
 from judge import JudgeInfo
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn")
 
 thread_pool = ThreadPoolExecutor(max_workers=50)
 
-def process_one_judge_request(request: Submission) ->None:
+def process_one_judge_request(submission_id: int, lecture_id: int, assignment_id: int, for_evaluation: bool) ->None:
+    logger.info(f"JudgeInfo(submission_id={submission_id}, lecture_id={lecture_id}, assignment_id={assignment_id}, for_evaluation={for_evaluation}) will be created...")
     judge_info = JudgeInfo(
-        submission_id=request.id,
-        lecture_id=request.lecture_id,
-        assignment_id=request.assignment_id,
-        for_evaluation=request.for_evaluation,
+        submission_id=submission_id,
+        lecture_id=lecture_id,
+        assignment_id=assignment_id,
+        for_evaluation=for_evaluation,
     )
-    
+    logger.info("START JUDGE...")
     err = judge_info.judge()
+    logger.info(f"JUDGE ERROR: \"{err}\"")
+    logger.info("END JUDGE")
     
     if not err.silence():
         logger.error(f"ジャッジ中にエラーが生じました: {err}")
@@ -37,7 +41,9 @@ async def process_judge_requests():
                     )
                     # スレッドプールを使用して各ジャッジリクエストを処理
                     for submission in queued_submissions:
-                        thread_pool.submit(process_one_judge_request, submission)
+                        # logger.info(f"submission: [id: {submission.id}, ts: {submission.ts}, batch_id: {submission.batch_id}, student_id: {submission.student_id}, assignment_id: {submission.assignment_id}, for_evaluation: {submission.for_evaluation}]")
+                        logger.info("throw judge request to thread pool...")
+                        thread_pool.submit(process_one_judge_request, submission.id, submission.lecture_id, submission.assignment_id, submission.for_evaluation)
                 else:
                     logger.info("キューにジャッジリクエストはありません。")
         except Exception as e:

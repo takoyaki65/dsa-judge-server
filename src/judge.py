@@ -29,7 +29,7 @@ from enum import Enum
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)
-test_logger = logging.getLogger(__name__)
+test_logger = logging.getLogger("uvicorn")
 
 load_dotenv()
 
@@ -89,6 +89,10 @@ class ProblemInfo:
     lecture_id: int
     assignment_id: int
     for_evaluation: bool
+    timeMS: int
+    memoryMB: int
+    build_script_path: str
+    executable: str
 
 
 class JudgeInfo:
@@ -96,7 +100,7 @@ class JudgeInfo:
     lecture_id: int
     assignment_id: int
     for_evaluation: bool
-    problem_record: Problem | None  # Problemテーブル内のテーブルレコード
+    problem_record: ProblemInfo  # Problemテーブル内のテーブルレコード
 
     required_files: list[str]  # ユーザに提出を求められているソースコードの名前リスト
     arranged_filepaths: list[
@@ -124,14 +128,40 @@ class JudgeInfo:
         self.assignment_id = assignment_id
         self.for_evaluation = for_evaluation
 
-        self.problem_record = fetch_problem(
+        db = SessionLocal()
+        
+        raw_problem_record = fetch_problem(
             db=db,
             lecture_id=lecture_id,
             assignment_id=assignment_id,
             for_evaluation=for_evaluation,
         )
-
-        db = SessionLocal()
+        
+        if raw_problem_record is None:
+            # Submissionテーブルのstatusをdoneに変更
+            db = SessionLocal()
+            update_submission_status(
+                db=db, submission_id=self.submission_id, status="done"
+            )
+            # Submissionテーブルのmessageにエラー文を追加
+            error_message = f"Error on Problem {self.lecture_id}-{self.assignment_id}:{self.for_evaluation}: Not found"
+            update_submission_message(
+                db=db, submission_id=self.submission_id, message=error_message
+            )
+            db.close()
+            raise ValueError(error_message)
+        
+        self.problem_record = ProblemInfo(
+            lecture_id=raw_problem_record.lecture_id,
+            assignment_id=raw_problem_record.assignment_id,
+            for_evaluation=raw_problem_record.for_evaluation,
+            timeMS=raw_problem_record.timeMS,
+            memoryMB=raw_problem_record.memoryMB,
+            build_script_path=raw_problem_record.build_script_path,
+            executable=raw_problem_record.executable
+        )
+        
+        test_logger.info(f"JudgeInfo.__init__: problem_record: {self.problem_record}")
 
         # Get required file names
         self.required_files = fetch_required_files(
@@ -140,6 +170,8 @@ class JudgeInfo:
             assignment_id=assignment_id,
             for_evaluation=for_evaluation,
         )
+        
+        test_logger.info(f"JudgeInfo.__init__: required_files: {self.required_files}")
 
         # Get arranged filepaths
         self.arranged_filepaths = [
@@ -151,12 +183,16 @@ class JudgeInfo:
                 for_evaluation=for_evaluation,
             )
         ]
+        
+        test_logger.info(f"JudgeInfo.__init__: required_files: {self.required_files}")
 
         # Get uploaded filepaths
         self.uploaded_filepaths = [
             RESOURCE_DIR / filepath
             for filepath in fetch_uploaded_filepaths(db=db, submission_id=submission_id)
         ]
+        
+        test_logger.info(f"JudgeInfo.__init__: uploaded_filepaths: {self.uploaded_filepaths}")
 
         # Get testcases info
         testcases = fetch_testcases(
@@ -284,7 +320,6 @@ class JudgeInfo:
             return status
     
     def _exec_checker(self, testcase_list: list[TestCases], initial_volume: Volume, container_name: str, timeoutSec: int, memoryLimitMB: int) -> JudgeStatus:
-        assert self.problem_record is not None
         db = SessionLocal()
         summary_status: JudgeStatus = JudgeStatus(JudgeStatusFlag.AC)
         for testcase in testcase_list:
@@ -309,14 +344,16 @@ class JudgeInfo:
             
             # スクリプトが要求されるならそれをボリュームにコピー
             if testcase.script_path is not None:
-                volume.copyFile(
+                err = volume.copyFile(
                     RESOURCE_DIR / testcase.script_path,
                     Path("./") / Path(testcase.script_path).name
                 )
-                args = [str(Path("./") / Path(testcase.script_path).name)]
+                if not err.silence():
+                    test_logger.info(f"err occured when copying script file: {err}")
+                args = [f"./{Path(testcase.script_path).name}"]
             else:
                 # そうでないなら通常のexecutableをargsに追加
-                args = [str(Path("./") / self.problem_record.executable)]
+                args = [f"./{self.problem_record.executable}"]
             
             stdin: str = ""
             expected_stdout: str = ""
@@ -427,19 +464,6 @@ class JudgeInfo:
         return Error.Nothing()
 
     def judge(self) -> Error:
-        if self.problem_record is None:
-            # Submissionテーブルのstatusをdoneに変更
-            db = SessionLocal()
-            update_submission_status(
-                db=db, submission_id=self.submission_id, status="done"
-            )
-            # Submissionテーブルのmessageにエラー文を追加
-            error_message = f"Error on Problem {self.lecture_id}-{self.assignment_id}:{self.for_evaluation}: Not found"
-            update_submission_message(
-                db=db, submission_id=self.submission_id, message=error_message
-            )
-            db.close()
-            return Error(error_message)
 
         # 1. コンパイル前のチェックを行う
         # required_files, arranged_filesが入ったボリュームを作る

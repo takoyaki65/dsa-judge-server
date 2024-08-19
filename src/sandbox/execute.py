@@ -23,7 +23,7 @@ from .my_error import Error
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)
-test_logger = logging.getLogger(__name__)
+test_logger = logging.getLogger("uvicorn")
 
 
 # Dockerボリュームの管理クラス
@@ -115,6 +115,7 @@ class Volume:
             ).resolve()
             err = ci.copyFile(PathInClient, str(dstInContainer))
             if err.message != "":
+                ci.remove()
                 return err
 
         ci.remove()
@@ -312,6 +313,8 @@ class ContainerInfo:
         cmd = ["docker"] + args
 
         err = ""
+        
+        test_logger.info(f"copy container command: {cmd}")
 
         try:
             subprocess.run(cmd, check=True)
