@@ -11,6 +11,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn")
 
 #----------------------- for judge server --------------------------------------
+from enum import Enum
+
+class SubmissionProgressStatus(Enum):
+    PENDING = 'pending'
+    QUEUED = 'queued'
+    RUNNING = 'running'
+    DONE = 'done'
+
+class JudgeSummaryStatus(Enum):
+    UNPROCESSED = 'Unprocessed'
+    AC = 'AC'
+    WA = 'WA'
+    TLE = 'TLE'
+    MLE = 'MLE'
+    CE = 'CE'
+    RE = 'RE'
+    OLE = 'OLE'
+    IE = 'IE'
+
 @dataclass
 class SubmissionRecord:
     id: int
@@ -20,11 +39,11 @@ class SubmissionRecord:
     lecture_id: int
     assignment_id: int
     for_evaluation: bool
-    status: str # Enum('pending', 'queued', 'running', 'done'), default='pending'
-    prebuilt_result: str # Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed'
-    postbuilt_result: str # Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed'
-    judge_result: str # Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed'
-    message: str # default=''
+    status: SubmissionProgressStatus
+    prebuilt_result: JudgeSummaryStatus
+    postbuilt_result: JudgeSummaryStatus
+    judge_result: JudgeSummaryStatus
+    message: str
 
 # Submissionテーブルから、statusが"queued"のジャッジリクエストを数件取得し、statusを"running"
 # に変え、変更したリクエスト(複数)を返す
@@ -47,10 +66,10 @@ def fetch_queued_judge_and_change_status_to_running(db: Session, n: int) -> list
                 lecture_id=submission.lecture_id,
                 assignment_id=submission.assignment_id,
                 for_evaluation=submission.for_evaluation,
-                status=submission.status,
-                prebuilt_result=submission.prebuilt_result,
-                postbuilt_result=submission.postbuilt_result,
-                judge_result=submission.judge_result,
+                status=SubmissionProgressStatus(submission.status),
+                prebuilt_result=JudgeSummaryStatus(submission.prebuilt_result),
+                postbuilt_result=JudgeSummaryStatus(submission.postbuilt_result),
+                judge_result=JudgeSummaryStatus(submission.judge_result),
                 message=submission.message)
             for submission in submission_list
         ]
@@ -58,7 +77,7 @@ def fetch_queued_judge_and_change_status_to_running(db: Session, n: int) -> list
         db.rollback()
         logger.error(f"fetch_queued_judgeでエラーが発生しました: {str(e)}")
         return []
-    
+
 @dataclass
 class ProblemRecord:
     lecture_id: int
@@ -164,6 +183,16 @@ def fetch_testcases(db: Session, lecture_id: int, assignment_id: int, for_evalua
         for testcase in testcase_list
     ]
     
+class SingleJudgeStatus(Enum):
+    AC = 'AC'
+    WA = 'WA'
+    TLE = 'TLE'
+    MLE = 'MLE'
+    CE = 'CE'
+    RE = 'RE'
+    OLE = 'OLE'
+    IE = 'IE'
+    
 @dataclass
 class JudgeResultRecord:
     id: int
@@ -175,7 +204,7 @@ class JudgeResultRecord:
     exit_code: int
     stdout: str
     stderr: str
-    result: str # Column(Enum('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), nullable=False)
+    result: SingleJudgeStatus
 
 # 特定のテストケースに対するジャッジ結果をJudgeResultテーブルに登録する
 def register_judge_result(db: Session, result: JudgeResultRecord) -> None:
@@ -188,7 +217,7 @@ def register_judge_result(db: Session, result: JudgeResultRecord) -> None:
         exit_code=result.exit_code,
         stdout=result.stdout,
         stderr=result.stderr,
-        result=result.result
+        result=result.result.value
     )
     db.add(judge_result)
     db.commit()
@@ -258,10 +287,10 @@ def register_judge_request(db: Session, batch_id: int | None, student_id: str, l
         lecture_id=new_submission.lecture_id,
         assignment_id=new_submission.assignment_id,
         for_evaluation=new_submission.for_evaluation,
-        status=new_submission.status,
-        prebuilt_result=new_submission.prebuilt_result,
-        postbuilt_result=new_submission.postbuilt_result,
-        judge_result=new_submission.postbuilt_result,
+        status=SubmissionProgressStatus(new_submission.status),
+        prebuilt_result=JudgeSummaryStatus(new_submission.prebuilt_result),
+        postbuilt_result=JudgeSummaryStatus(new_submission.postbuilt_result),
+        judge_result=JudgeSummaryStatus(new_submission.postbuilt_result),
         message=new_submission.message
     )
 
@@ -310,7 +339,7 @@ def fetch_judge_results(db: Session, submission_id: int) -> list[JudgeResultReco
             exit_code=raw_result.exit_code,
             stdout=raw_result.stdout,
             stderr=raw_result.stderr,
-            result=raw_result.result
+            result=SingleJudgeStatus(raw_result.result)
         )
         for raw_result in raw_judge_results
     ]
