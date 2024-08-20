@@ -1,130 +1,222 @@
 # Create, Read, Update and Delete (CRUD)
 from sqlalchemy.orm import Session
 from pathlib import Path
+from dataclasses import dataclass
+from datetime import datetime
 
 from . import models
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("uvicorn")
+
 #----------------------- for judge server --------------------------------------
+@dataclass
+class SubmissionRecord:
+    id: int
+    ts: datetime 
+    batch_id: int | None
+    student_id: str
+    lecture_id: int
+    assignment_id: int
+    for_evaluation: bool
+    status: str # Enum('pending', 'queued', 'running', 'done'), default='pending'
+    prebuilt_result: str # Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed'
+    postbuilt_result: str # Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed'
+    judge_result: str # Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed'
+    message: str # default=''
 
 # Submissionテーブルから、statusが"queued"のジャッジリクエストを数件取得し、statusを"running"
 # に変え、変更したリクエスト(複数)を返す
-def fetch_queued_judge(db: Session, n: int) -> list[models.Submission]:
-    submissions = db.query(models.Submission).filter(models.Submission.status == 'queued').limit(n).all()
-    for submission in submissions:
-        submission.status = 'running'
-    db.commit()
-    return submissions
+def fetch_queued_judge_and_change_status_to_running(db: Session, n: int) -> list[SubmissionRecord]:
+    logger.info("fetch_queued_judgeが呼び出されました")
+    try:
+        # FOR UPDATE NOWAITを使用して排他的にロックを取得
+        submission_list = db.query(models.Submission).filter(models.Submission.status == 'queued').with_for_update(nowait=True).limit(n).all()
+        
+        for submission in submission_list:
+            submission.status = 'running'
+        
+        db.commit()
+        return [
+            SubmissionRecord(
+                id=submission.id,
+                ts=submission.ts,
+                batch_id=submission.batch_id,
+                student_id=submission.student_id,
+                lecture_id=submission.lecture_id,
+                assignment_id=submission.assignment_id,
+                for_evaluation=submission.for_evaluation,
+                status=submission.status,
+                prebuilt_result=submission.prebuilt_result,
+                postbuilt_result=submission.postbuilt_result,
+                judge_result=submission.judge_result,
+                message=submission.message)
+            for submission in submission_list
+        ]
+    except Exception as e:
+        db.rollback()
+        logger.error(f"fetch_queued_judgeでエラーが発生しました: {str(e)}")
+        return []
+    
+@dataclass
+class ProblemRecord:
+    lecture_id: int
+    assignment_id: int
+    for_evaluation: bool
+    title: str
+    description_path: str
+    timeMS: int
+    memoryMB: int
+    build_script_path: str
+    executable: str
 
 # lecture_id, assignment_id, for_evaluationのデータから、それに対応するProblemデータ(実行ファイル名、制限リソース量)を取得する
-def fetch_problem(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> models.Problem | None:
+def fetch_problem(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> ProblemRecord | None:
+    logger.info("call fetch_problem")
     problem = db.query(models.Problem).filter(models.Problem.lecture_id == lecture_id,
                                               models.Problem.assignment_id == assignment_id,
                                               models.Problem.for_evaluation == for_evaluation
                                               ).first()
     
-    return problem
+    if problem is not None:
+        return ProblemRecord(
+            lecture_id=problem.lecture_id,
+            assignment_id=problem.assignment_id,
+            for_evaluation=problem.for_evaluation,
+            title=problem.title,
+            description_path=problem.description_path,
+            timeMS=problem.timeMS,
+            memoryMB=problem.memoryMB,
+            build_script_path=problem.build_script_path,
+            executable=problem.executable
+        )
+
+    return None
 
 # ジャッジリクエストに紐づいている、アップロードされたファイルのパスのリストをUploadedFiles
 # テーブルから取得して返す
 def fetch_uploaded_filepaths(db: Session, submission_id: int) -> list[str]:
+    logger.info("call fetch_uploaded_filepaths")
     uploaded_files = db.query(models.UploadedFiles).filter(models.UploadedFiles.submission_id == submission_id).all()
-    return [file.path.__str__() for file in uploaded_files]
+    return [file.path for file in uploaded_files]
 
 # 特定の問題でこちらで用意しているファイルのパス(複数)をArrangedFilesテーブルから取得する
 def fetch_arranged_filepaths(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> list[str]:
+    logger.info("call fetch_arranged_filepaths")
     arranged_files = db.query(models.ArrangedFiles).filter(
         models.ArrangedFiles.lecture_id == lecture_id,
         models.ArrangedFiles.assignment_id == assignment_id,
         models.ArrangedFiles.for_evaluation == for_evaluation
     ).all()
-    return [file.path.__str__() for file in arranged_files]
+    return [file.path for file in arranged_files]
 
 # 特定の問題で必要とされているのファイル名のリストをRequiredFilesテーブルから取得する
 def fetch_required_files(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> list[str]:
+    logger.info("call fetch_required_files")
     required_files = db.query(models.RequiredFiles).filter(
         models.RequiredFiles.lecture_id == lecture_id,
         models.RequiredFiles.assignment_id == assignment_id,
         models.RequiredFiles.for_evaluation == for_evaluation
     ).all()
-    return [file.name.__str__() for file in required_files]
+    return [file.name for file in required_files]
+
+@dataclass
+class TestCaseRecord:
+    id: int
+    lecture_id: int
+    assignment_id: int
+    for_evaluation: bool
+    type: str
+    description: str | None
+    score: str | None
+    script_path: str | None
+    argument_path: str | None
+    stdin_path: str | None
+    stdout_path: str
+    stderr_path: str
+    exit_code: int # default: 0
 
 # 特定の問題に紐づいたテストケースのリストをTestCasesテーブルから取得する
-def fetch_testcases(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> list[models.TestCases]:
-    return db.query(models.TestCases).filter(
+def fetch_testcases(db: Session, lecture_id: int, assignment_id: int, for_evaluation: bool) -> list[TestCaseRecord]:
+    logger.info("call fetch_testcases")
+    testcase_list = db.query(models.TestCases).filter(
         models.TestCases.lecture_id == lecture_id,
         models.TestCases.assignment_id == assignment_id,
         models.TestCases.for_evaluation == for_evaluation
     ).all()
+    return [
+        TestCaseRecord(
+            id=testcase.id,
+            lecture_id=testcase.lecture_id,
+            assignment_id=testcase.assignment_id,
+            for_evaluation=testcase.for_evaluation,
+            type=testcase.type,
+            description=testcase.description,
+            score=testcase.score,
+            script_path=testcase.script_path,
+            argument_path=testcase.argument_path,
+            stdin_path=testcase.stdin_path,
+            stdout_path=testcase.stdout_path,
+            stderr_path=testcase.stderr_path,
+            exit_code=testcase.exit_code
+        )
+        for testcase in testcase_list
+    ]
+    
+@dataclass
+class JudgeResultRecord:
+    id: int
+    ts: datetime
+    submission_id: int
+    testcase_id: int
+    timeMS: int
+    memoryKB: int
+    exit_code: int
+    stdout: str
+    stderr: str
+    result: str # Column(Enum('AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), nullable=False)
 
 # 特定のテストケースに対するジャッジ結果をJudgeResultテーブルに登録する
-def register_judge_result(db: Session, submission_id: int, testcase_id: int, timeMS: int, memoryKB: int, exit_code: int, stdout: str, stderr: str, result: str) -> None:
+def register_judge_result(db: Session, result: JudgeResultRecord) -> None:
+    logger.info("call register_judge_result")
     judge_result = models.JudgeResult(
-        submission_id=submission_id,
-        testcase_id=testcase_id,
-        timeMS=timeMS,
-        memoryKB=memoryKB,
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
-        result=result
+        submission_id=result.submission_id,
+        testcase_id=result.testcase_id,
+        timeMS=result.timeMS,
+        memoryKB=result.memoryKB,
+        exit_code=result.exit_code,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        result=result.result
     )
     db.add(judge_result)
     db.commit()
     
-# 特定のsubmission_idに対応するジャッジリクエストの全体statusを変更する
-# 注意: statusには'pending', 'queued', 'running', 'done'のみ入れる
-def update_submission_status(db: Session, submission_id: int, status: str) -> None:
-    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
-    if submission:
-        submission.status = status
-        db.commit()
-    else:
-        raise ValueError(f"Submission with id {submission_id} not found")
-
-# 特定のsubmission_idに対応するジャッジリクエストのprebuilt_resultを変更する
-# 注意: prebuilt_statusには'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入る
-def update_submission_prebuilt_result(db: Session, submission_id: int, prebuilt_result: str) -> None:
-    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
-    if submission:
-        submission.prebuilt_result = prebuilt_result
-        db.commit()
-    else:
-        raise ValueError(f"Submission with id {submission_id} not found")
-
-# 特定のsubmission_idに対応するジャッジリクエストのpostbuilt_resultを変更する
-# 注意: postbuilt_statusには'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入る
-def update_submission_postbuilt_result(db: Session, submission_id: int, postbuilt_result: str) -> None:
-    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
-    if submission:
-        submission.postbuilt_result = postbuilt_result
-        db.commit()
-    else:
-        raise ValueError(f"Submission with id {submission_id} not found")
+# 特定のSubmissionに対応するジャッジリクエストの属性値を変更する
+# 注) SubmissionRecord.idが同じレコードがテーブル内にあること
+def update_submission_record(db: Session, submission_record: SubmissionRecord) -> None:
+    logger.info("call update_submission_status")
+    raw_submission_record = db.query(models.Submission).filter(models.Submission.id == submission_record.id).first()
+    if raw_submission_record is None:
+        raise ValueError(f"Submission with id {submission_record.id} not found")
     
-# 特定のsubmission_idに対応するジャッジリクエストのjudge_resultを変更する
-# 注意: judge_statusには'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'のみ入る
-def update_submission_judge_result(db: Session, submission_id: int, judge_result: str) -> None:
-    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
-    if submission:
-        submission.judge_result = judge_result
-        db.commit()
-    else:
-        raise ValueError(f"Submission with id {submission_id} not found")
-
-# 特定のsubmission_idに対応するジャッジリクエストのmessageを変更する。
-def update_submission_message(db: Session, submission_id: int, message: str) -> None:
-    submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
-    if submission:
-        submission.message = message
-        db.commit()
-    else:
-        raise ValueError(f"Submission with id {submission_id} not found")
+    # assert raw_submission_record.batch_id == submission_record.batch_id
+    # assert raw_submission_record.student_id == submission_record.student_id
+    # assert raw_submission_record.for_evaluation == submission_record.for_evaluation
+    raw_submission_record.status = submission_record.status
+    raw_submission_record.prebuilt_result = submission_record.prebuilt_result
+    raw_submission_record.postbuilt_result = submission_record.postbuilt_result
+    raw_submission_record.judge_result = submission_record.judge_result
+    raw_submission_record.message = submission_record.message
+    db.commit()
 
 # Undo処理: judge-serverをシャットダウンするときに実行する
 # 1. その時点でstatusが"running"になっているジャッジリクエスト(from Submissionテーブル)を
 #    全て"queued"に変更する
 # 2. 変更したジャッジリクエストについて、それに紐づいたJudgeResultを全て削除する
 def undo_running_submissions(db: Session) -> None:
+    logger.info("call undo_running_submissions")
     # 1. "running"状態のSubmissionを全て取得
     running_submissions = db.query(models.Submission).filter(models.Submission.status == "running").all()
     
@@ -133,6 +225,8 @@ def undo_running_submissions(db: Session) -> None:
     # すべてのrunning submissionのstatusを"queued"に変更
     for submission in running_submissions:
         submission.status = "queued"
+    
+    db.commit()
     
     # 関連するJudgeResultを一括で削除
     db.query(models.JudgeResult).filter(models.JudgeResult.submission_id.in_(submission_id_list)).delete(synchronize_session=False)
@@ -144,22 +238,36 @@ def undo_running_submissions(db: Session) -> None:
 # ---------------- for client server -------------------------------------------
 
 # Submissionテーブルにジャッジリクエストを追加する
-def register_judge_request(db: Session, batch_id: int | None, student_id: str, lecture_id: int, assignment_id: int, for_evaluation: bool) -> models.Submission:
+def register_judge_request(db: Session, batch_id: int | None, student_id: str, lecture_id: int, assignment_id: int, for_evaluation: bool) -> SubmissionRecord:
+    logger.info("call register_judge_request")
     new_submission = models.Submission(
         batch_id=batch_id,
         student_id=student_id,
         lecture_id=lecture_id,
         assignment_id=assignment_id,
         for_evaluation=for_evaluation,
-        # status='pending'
     )
     db.add(new_submission)
     db.commit()
     db.refresh(new_submission)
-    return new_submission
+    return SubmissionRecord(
+        id=new_submission.id,
+        ts=new_submission.ts,
+        batch_id=new_submission.batch_id,
+        student_id=new_submission.student_id,
+        lecture_id=new_submission.lecture_id,
+        assignment_id=new_submission.assignment_id,
+        for_evaluation=new_submission.for_evaluation,
+        status=new_submission.status,
+        prebuilt_result=new_submission.prebuilt_result,
+        postbuilt_result=new_submission.postbuilt_result,
+        judge_result=new_submission.postbuilt_result,
+        message=new_submission.message
+    )
 
 # アップロードされたファイルをUploadedFilesに登録する
 def register_uploaded_files(db: Session, submission_id: int, path: Path) -> None:
+    logger.info("call register_uploaded_files")
     new_uploadedfiles = models.UploadedFiles(
         submission_id=submission_id,
         path=str(path)
@@ -170,6 +278,7 @@ def register_uploaded_files(db: Session, submission_id: int, path: Path) -> None
 # Submissionテーブルのジャッジリクエストをキューに追加する
 # 具体的にはSubmissionレコードのstatusをqueuedに変更する
 def enqueue_judge_request(db: Session, submission_id: int) -> None:
+    logger.info("call enqueue_judge_request")
     pending_submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     
     if pending_submission is not None:
@@ -180,12 +289,28 @@ def enqueue_judge_request(db: Session, submission_id: int) -> None:
 
 # Submissionテーブルのジャッジリクエストのstatusを確認する
 def fetch_judge_status(db: Session, submission_id: int) -> str:
+    logger.info("call fetch_judge_status")
     submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     if submission is None:
         raise ValueError(f"Submission with {submission_id} not found")
     return submission.status
 
 # 特定のジャッジリクエストに紐づいたジャッジ結果を取得する
-def fetch_judge_results(db: Session, submission_id: int) -> list[models.JudgeResult]:
-    judge_results = db.query(models.JudgeResult).filter(models.JudgeResult.submission_id == submission_id).all()
-    return judge_results
+def fetch_judge_results(db: Session, submission_id: int) -> list[JudgeResultRecord]:
+    logger.info("call fetch_judge_result")
+    raw_judge_results = db.query(models.JudgeResult).filter(models.JudgeResult.submission_id == submission_id).all()
+    return [
+        JudgeResultRecord(
+            id=raw_result.id,
+            ts=raw_result.ts,
+            submission_id=raw_result.submission_id,
+            testcase_id=raw_result.testcase_id,
+            timeMS=raw_result.timeMS,
+            memoryKB=raw_result.memoryKB,
+            exit_code=raw_result.exit_code,
+            stdout=raw_result.stdout,
+            stderr=raw_result.stderr,
+            result=raw_result.result
+        )
+        for raw_result in raw_judge_results
+    ]

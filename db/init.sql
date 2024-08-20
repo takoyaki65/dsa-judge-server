@@ -17,9 +17,9 @@ INSERT INTO Lecture (title, start_date, end_date) VALUES
 
 -- Problemテーブルの作成
 CREATE TABLE IF NOT EXISTS Problem (
-    lecture_id INT, -- Lecture.idからの外部キー
-    assignment_id INT, -- 何番目の課題か, e.g., 1, 2, ...
-    for_evaluation BOOLEAN, -- 課題採点用かどうか, True/False
+    lecture_id INT NOT NULL, -- Lecture.idからの外部キー
+    assignment_id INT NOT NULL, -- 何番目の課題か, e.g., 1, 2, ...
+    for_evaluation BOOLEAN NOT NULL, -- 課題採点用かどうか, True/False
     title VARCHAR(255) NOT NULL, -- 課題名 e.g., 基本課題1
     description_path VARCHAR(255) NOT NULL, -- 課題の説明文のファイルパス
     timeMS INT NOT NULL, -- ジャッジの制限時間[ms] e.g., 1000
@@ -74,9 +74,9 @@ INSERT INTO RequiredFiles (lecture_id, assignment_id, for_evaluation, name) VALU
 -- TestCasesテーブルの作成
 CREATE TABLE IF NOT EXISTS TestCases (
     id INT AUTO_INCREMENT PRIMARY KEY, -- テストケースのID(auto increment)
-    lecture_id INT, -- 何回目の授業で出される課題か, e.g., 1, 2, ...
-    assignment_id INT, -- 何番目の課題か, e.g., 1, 2, ...
-    for_evaluation BOOLEAN, -- 課題採点用かどうか, True/False
+    lecture_id INT NOT NULL, -- 何回目の授業で出される課題か, e.g., 1, 2, ...
+    assignment_id INT NOT NULL, -- 何番目の課題か, e.g., 1, 2, ...
+    for_evaluation BOOLEAN NOT NULL, -- 課題採点用かどうか, True/False
     type ENUM('preBuilt', 'postBuilt', 'Judge') NOT NULL, -- テストケースが実行されるタイミング
     description TEXT, -- どの部分点に相当するかの説明
     score INT, -- テストケースの配点, フォーマットチェック用だったらゼロ
@@ -136,9 +136,9 @@ CREATE TABLE IF NOT EXISTS Submission (
     ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- リクエストされた時刻
     batch_id INT, -- ジャッジリクエストが属しているバッチリクエストのID, 学生のフォーマットチェック提出ならNULL
     student_id VARCHAR(255) NOT NULL, -- 採点対象の学生の学籍番号
-    lecture_id INT, -- 何回目の授業で出される課題か, e.g., 1, 2, ...
-    assignment_id INT, -- 何番目の課題か, e.g., 1, 2, ...
-    for_evaluation BOOLEAN, -- 課題採点用かどうか, True/False
+    lecture_id INT NOT NULL, -- 何回目の授業で出される課題か, e.g., 1, 2, ...
+    assignment_id INT NOT NULL, -- 何番目の課題か, e.g., 1, 2, ...
+    for_evaluation BOOLEAN NOT NULL, -- 課題採点用かどうか, True/False
     status ENUM('pending', 'queued', 'running', 'done') DEFAULT 'pending', -- リクエストの処理状況, pending/queued/running/done
     prebuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- prebuiltチェックの結果
     postbuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- postbuiltチェックの結果

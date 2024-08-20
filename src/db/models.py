@@ -13,9 +13,9 @@ class Lecture(Base):
 
 class Problem(Base):
     __tablename__ = 'Problem'
-    lecture_id = Column(Integer, ForeignKey('Lecture.id'), primary_key=True)
-    assignment_id = Column(Integer, primary_key=True)
-    for_evaluation = Column(Boolean, primary_key=True)
+    lecture_id = Column(Integer, ForeignKey('Lecture.id'), primary_key=True, nullable=False)
+    assignment_id = Column(Integer, primary_key=True, nullable=False)
+    for_evaluation = Column(Boolean, primary_key=True, nullable=False)
     title = Column(String(255), nullable=False)
     description_path = Column(String(255), nullable=False)
     timeMS = Column(Integer, nullable=False)
@@ -43,9 +43,9 @@ class RequiredFiles(Base):
 class TestCases(Base):
     __tablename__ = 'TestCases'
     id = Column(Integer, primary_key=True, autoincrement=True)
-    lecture_id = Column(Integer, ForeignKey('Problem.lecture_id'))
-    assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'))
-    for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'))
+    lecture_id = Column(Integer, ForeignKey('Problem.lecture_id'), nullable=False)
+    assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'), nullable=False)
+    for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'), nullable=False)
     type = Column(Enum('preBuilt', 'postBuilt', 'Judge'), nullable=False)
     description = Column(String)
     score = Column(Integer)
@@ -78,9 +78,9 @@ class Submission(Base):
     ts = Column(TIMESTAMP, server_default=text('CURRENT_TIMESTAMP'))
     batch_id = Column(Integer, ForeignKey('BatchSubmission.id'))
     student_id = Column(String(255), ForeignKey('Student.id'), nullable=False)
-    lecture_id = Column(Integer, ForeignKey('Problem.lecture_id'))
-    assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'))
-    for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'))
+    lecture_id = Column(Integer, ForeignKey('Problem.lecture_id'), nullable=False)
+    assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'), nullable=False)
+    for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'), nullable=False)
     status = Column(Enum('pending', 'queued', 'running', 'done'), default='pending')
     prebuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
     postbuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
