@@ -233,10 +233,10 @@ def update_submission_record(db: Session, submission_record: SubmissionRecord) -
     # assert raw_submission_record.batch_id == submission_record.batch_id
     # assert raw_submission_record.student_id == submission_record.student_id
     # assert raw_submission_record.for_evaluation == submission_record.for_evaluation
-    raw_submission_record.status = submission_record.status
-    raw_submission_record.prebuilt_result = submission_record.prebuilt_result
-    raw_submission_record.postbuilt_result = submission_record.postbuilt_result
-    raw_submission_record.judge_result = submission_record.judge_result
+    raw_submission_record.status = submission_record.status.value
+    raw_submission_record.prebuilt_result = submission_record.prebuilt_result.value
+    raw_submission_record.postbuilt_result = submission_record.postbuilt_result.value
+    raw_submission_record.judge_result = submission_record.judge_result.value
     raw_submission_record.message = submission_record.message
     db.commit()
 
