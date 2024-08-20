@@ -140,13 +140,18 @@ def fetch_required_files(db: Session, lecture_id: int, assignment_id: int, for_e
     ).all()
     return [file.name for file in required_files]
 
+class TestCaseType(Enum):
+    preBuilt = 'preBuilt'
+    postBuilt = 'postBuilt'
+    Judge = 'Judge'
+
 @dataclass
 class TestCaseRecord:
     id: int
     lecture_id: int
     assignment_id: int
     for_evaluation: bool
-    type: str
+    type: TestCaseType # ENUM('preBuilt', 'postBuilt', 'Judge') NOT NULL, -- テストケースが実行されるタイミング
     description: str | None
     score: str | None
     script_path: str | None
@@ -170,7 +175,7 @@ def fetch_testcases(db: Session, lecture_id: int, assignment_id: int, for_evalua
             lecture_id=testcase.lecture_id,
             assignment_id=testcase.assignment_id,
             for_evaluation=testcase.for_evaluation,
-            type=testcase.type,
+            type=TestCaseType(testcase.type), # cast str to Enum
             description=testcase.description,
             score=testcase.score,
             script_path=testcase.script_path,
