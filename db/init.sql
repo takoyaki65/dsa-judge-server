@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS Submission (
     lecture_id INT NOT NULL, -- 何回目の授業で出される課題か, e.g., 1, 2, ...
     assignment_id INT NOT NULL, -- 何番目の課題か, e.g., 1, 2, ...
     for_evaluation BOOLEAN NOT NULL, -- 課題採点用かどうか, True/False
-    status ENUM('pending', 'queued', 'running', 'done') DEFAULT 'pending', -- リクエストの処理状況, pending/queued/running/done
+    progress ENUM('pending', 'queued', 'running', 'done') DEFAULT 'pending', -- リクエストの処理状況, pending/queued/running/done
     prebuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- prebuiltチェックの結果
     postbuilt_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- postbuiltチェックの結果
     judge_result ENUM('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE') DEFAULT 'Unprocessed', -- ジャッジ結果
