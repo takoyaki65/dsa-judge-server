@@ -25,7 +25,7 @@ def test_RunHelloWorld():
     task = TaskInfo(
         name="ubuntu",
         arguments=["echo", "Hello, World!"],
-        timeout=5,
+        timeoutSec=5.0,
         memoryLimitMB=256,
         cpus=1,
     )
@@ -49,7 +49,7 @@ def test_ExitCode():
     task = TaskInfo(
         name="ubuntu",
         arguments=["sh", "-c", "exit 123"],
-        timeout=5,
+        timeoutSec=5.0,
         memoryLimitMB=256,
         cpus=1,
     )
@@ -116,7 +116,7 @@ def test_Stderr():
 
 # sleepした分ちゃんと実行時間が計測されているか確かめるテスト
 def test_SleepTime():
-    task = TaskInfo(name="ubuntu", arguments=["sleep", "3"], timeout=5)
+    task = TaskInfo(name="ubuntu", arguments=["sleep", "3"], timeoutSec=5.0)
 
     result, err = task.run()
 
@@ -132,7 +132,7 @@ def test_SleepTime():
 
 # タイムアウトをきちんと検出できているか確かめるテスト
 def test_Timeout():
-    task = TaskInfo(name="ubuntu", arguments=["sleep", "100"], timeout=3)
+    task = TaskInfo(name="ubuntu", arguments=["sleep", "100"], timeoutSec=3.0)
 
     result, err = task.run()
 
@@ -356,7 +356,7 @@ def test_MemoryLimit():
     task = TaskInfo(
         name="ubuntu",
         arguments=["dd", "if=/dev/zero", "of=/dev/null", "bs=800M"],
-        timeout=3,
+        timeoutSec=3.0,
         memoryLimitMB=500,
     )
 
@@ -405,7 +405,7 @@ def test_ForkBomb():
         arguments=["./fork_bomb.sh"],
         workDir="/workdir/",
         volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
-        timeout=3,
+        timeoutSec=3.0,
         pidsLimit=10,
     )
 

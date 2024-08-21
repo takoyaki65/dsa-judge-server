@@ -204,7 +204,7 @@ class JudgeInfo:
         )
         return JudgeSummaryStatus(judge_result_record.result.value)
             
-    def _exec_checker(self, testcase_list: list[TestCaseRecord], initial_volume: Volume, container_name: str, timeoutSec: int, memoryLimitMB: int) -> JudgeSummaryStatus:
+    def _exec_checker(self, testcase_list: list[TestCaseRecord], initial_volume: Volume, container_name: str, timeoutSec: float, memoryLimitMB: int) -> JudgeSummaryStatus:
         db = SessionLocal()
         status_aggregator: JudgeSummaryStatusAggregator = JudgeSummaryStatusAggregator(JudgeSummaryStatus.AC)
         for testcase in testcase_list:
@@ -314,7 +314,7 @@ class JudgeInfo:
                 arguments=args,
                 workDir="/workdir/",
                 volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=volume)],
-                timeout=timeoutSec,
+                timeoutSec=timeoutSec,
                 memoryLimitMB=memoryLimitMB,
                 Stdin=stdin,
             )
@@ -356,7 +356,7 @@ class JudgeInfo:
             arguments=args,
             workDir="/workdir/",
             volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=working_volume)],
-            timeout=2,
+            timeoutSec=2.0,
             memoryLimitMB=512
         )
         
@@ -376,7 +376,7 @@ class JudgeInfo:
         if not err.silence():
             return err
         # チェッカーを走らせる
-        prebuilt_result = self._exec_checker(testcase_list=self.prebuilt_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=2, memoryLimitMB=512)
+        prebuilt_result = self._exec_checker(testcase_list=self.prebuilt_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=2.0, memoryLimitMB=512)
         if prebuilt_result is not JudgeSummaryStatus.AC:
             # 早期終了
             db = SessionLocal()
@@ -402,7 +402,7 @@ class JudgeInfo:
         
         # 3. コンパイル後のチェックを行う
         # チェッカーを走らせる
-        postbuilt_result = self._exec_checker(testcase_list=self.postbuilt_testcases, initial_volume=working_volume, container_name="checker-lang-gcc", timeoutSec=2, memoryLimitMB=512)
+        postbuilt_result = self._exec_checker(testcase_list=self.postbuilt_testcases, initial_volume=working_volume, container_name="checker-lang-gcc", timeoutSec=2.0, memoryLimitMB=512)
         if postbuilt_result is not JudgeSummaryStatus.AC:
             # 早期終了
             db = SessionLocal()
@@ -416,7 +416,7 @@ class JudgeInfo:
         
         # 4. ジャッジを行う
         # チェッカーを走らせる
-        judge_result = self._exec_checker(testcase_list=self.judge_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=self.problem_record.timeMS / 1000, memoryLimitMB=self.problem_record.memoryMB)
+        judge_result = self._exec_checker(testcase_list=self.judge_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=self.problem_record.timeMS / 1000.0, memoryLimitMB=self.problem_record.memoryMB)
         
         # ボリュームを削除
         err = working_volume.remove()

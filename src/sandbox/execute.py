@@ -465,7 +465,7 @@ class TaskResult:
 class TaskInfo:
     name: str  # コンテナイメージ名
     arguments: list[str] = field(default_factory=list)  # コンテナ内で実行するコマンド
-    timeout: int = 0  # タイムアウト時間
+    timeoutSec: float = 0.0  # タイムアウト時間
     cpus: int = 0  # CPUの割り当て数
     memoryLimitMB: int = 0  # メモリ制限
     stackLimitKB: int = 0  # リカージョンの深さを制限
@@ -536,8 +536,8 @@ class TaskInfo:
 
         # self.timeout + 500msの制限時間を設定
         timeout = 30.0  # デフォルトは30秒
-        if self.timeout != 0:
-            timeout = self.timeout + 0.5
+        if self.timeoutSec != 0.0:
+            timeout = self.timeoutSec + 0.5
 
         # モニターを開始
         self.taskMonitor.start()
@@ -598,8 +598,8 @@ class TaskInfo:
 
         # タイムアウトしたかどうか
         if (
-            self.timeout != 0
-            and self.timeout < self.taskMonitor.get_elapsed_time_ms() / 1000
+            self.timeoutSec != 0.0
+            and self.timeoutSec < self.taskMonitor.get_elapsed_time_ms() / 1000
         ):
             TLE = True
 
