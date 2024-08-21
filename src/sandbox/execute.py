@@ -23,7 +23,7 @@ from .my_error import Error
 
 # ロガーの設定
 logging.basicConfig(level=logging.INFO)
-test_logger = logging.getLogger(__name__)
+test_logger = logging.getLogger("uvicorn")
 
 
 # Dockerボリュームの管理クラス
@@ -68,7 +68,7 @@ class Volume:
 
         return Error(err)
 
-    def copyFile(self, filePathFromClient: str, filePathInVolume: str) -> Error:
+    def copyFile(self, filePathFromClient: Path, filePathInVolume: Path) -> Error:
         ci = ContainerInfo("")
 
         err = ci.create(
@@ -79,15 +79,19 @@ class Volume:
         )
         if err.message != "":
             return err
+        
+        # filePathInVolumeが絶対パスの場合、相対パスに変換
+        if filePathInVolume.is_absolute():
+            filePathInVolume = Path(".") / filePathInVolume.relative_to("/")
 
-        dstInContainer = Path("/workdir") / Path(filePathInVolume)
-        err = ci.copyFile(filePathFromClient, str(dstInContainer))
+        dstInContainer = Path("/workdir") / filePathInVolume
+        err = ci.copyFile(filePathFromClient, dstInContainer)
 
         ci.remove()
         return err
 
     def copyFiles(
-        self, filePathsFromClient: list[str], DirPathInVolume: str = "./"
+        self, filePathsFromClient: list[Path], DirPathInVolume: Path = Path("./")
     ) -> Error:
         ci = ContainerInfo("")
 
@@ -100,23 +104,30 @@ class Volume:
 
         if err.message != "":
             return err
+        
+        # DirPathInVolumeが絶対パスの場合、相対パスに変換
+        if DirPathInVolume.is_absolute():
+            DirPathInVolume = Path(".") / DirPathInVolume.relative_to("/")
 
         for PathInClient in filePathsFromClient:
             dstInContainer = (
-                Path("/workdir") / Path(DirPathInVolume) / Path(PathInClient).name
+                Path("/workdir") / DirPathInVolume / PathInClient.name
             ).resolve()
             err = ci.copyFile(PathInClient, str(dstInContainer))
             if err.message != "":
+                ci.remove()
                 return err
 
         ci.remove()
         return Error("")
 
-    def removeFiles(self, filePathsInVolume: list[str]) -> Error:
+    def removeFiles(self, filePathsInVolume: list[Path]) -> Error:
         arguments = ["rm"]
 
         for filePath in filePathsInVolume:
-            filePathInContainer = Path("/workdir") / Path(filePath)
+            if filePath.is_absolute():
+                filePath = Path(".") / filePath.relative_to("/")
+            filePathInContainer = Path("/workdir") / filePath
             arguments += [str(filePathInContainer.resolve())]
 
         ci = ContainerInfo("")
@@ -150,6 +161,38 @@ class Volume:
 
         ci.remove()
         return Error("")
+    
+    def clone(self) -> tuple["Volume", Error]:
+        # 新しいDockerボリュームを作成
+        new_volume, err = Volume.create()
+        if err.message != "":
+            return Volume(""), Error(f"新しいボリュームの作成に失敗しました: {err.message}")
+
+        # 元のボリュームの内容を新しいボリュームにコピー
+        ci = ContainerInfo("")
+        err = ci.create(
+            containerName="ubuntu",
+            arguments=["cp", "-a", "/src/.", "/dst/"],
+            workDir="/",
+            volumeMountInfo=[
+                VolumeMountInfo(path="/src", volume=self),
+                VolumeMountInfo(path="/dst", volume=new_volume)
+            ]
+        )
+        if err.message != "":
+            return Volume(""), Error(f"コンテナの作成に失敗しました: {err.message}")
+
+        # コンテナを起動してコピーを実行
+        command = ["docker", "start", "-a", ci.containerID]
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        
+        if result.returncode != 0:
+            return Volume(""), Error(f"ボリュームのコピーに失敗しました: {result.stderr}")
+
+        # コンテナを削除
+        ci.remove()
+
+        return new_volume, Error("")
 
 
 @dataclass
@@ -264,12 +307,14 @@ class ContainerInfo:
         return Error(err)
 
     # ファイルのコピー
-    def copyFile(self, srcInHost: str, dstInContainer: str) -> Error:
-        args = ["cp", srcInHost, f"{self.containerID}:{dstInContainer}"]
+    def copyFile(self, srcInHost: Path, dstInContainer: Path) -> Error:
+        args = ["cp", str(srcInHost), f"{self.containerID}:{str(dstInContainer)}"]
 
         cmd = ["docker"] + args
 
         err = ""
+        
+        test_logger.info(f"copy container command: {cmd}")
 
         try:
             subprocess.run(cmd, check=True)
@@ -320,6 +365,19 @@ class TaskMonitor:
 
     def get_used_memory_byte(self) -> int:
         return self.maxUsedMemory
+
+    '''
+    Dockerコンテナのメモリの取得方法は3つある
+    1. docker statsコマンドを使って取得する
+    2. /sys/fs/cgroup/system.slice/docker-xxxxxx.scope/memory.currentから取得する
+    3. psコマんドで取得する
+         * docker inspect -f '{{.State.Pid}}' <container id> でコンテナIDに対応するPIDを取得
+         * ps -p <pid> -o pid,comm,rss でRSSを取得
+    1の手法は遅い。
+    2の手法は早いが、Linuxでしか使えない。
+    3の手法の場合、ユーザ空間のプロセスのRSSを取得するため、全体のメモリ使用量を取得できない。
+    ref: https://unix.stackexchange.com/questions/686814/cgroup-and-process-memory-statistics-mismatch
+    '''
 
     def __monitor_memory_usage_by_docker_stats(self) -> None:
         while self._monitoring:

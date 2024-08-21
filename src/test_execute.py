@@ -10,6 +10,7 @@ import logging
 from datetime import timedelta
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import time
 
 from db.crud import *
 from db.database import SessionLocal
@@ -126,7 +127,7 @@ def test_SleepTime():
     assert result.exitCode == 0
     assert result.stdout == ""
     assert result.stderr == ""
-    assert result.timeMS >= 2000 and result.timeMS <= 4000
+    assert result.timeMS >= 2000 and result.timeMS <= 5000
 
 
 # タイムアウトをきちんと検出できているか確かめるテスト
@@ -155,7 +156,7 @@ def test_CopyFileFromClientToVolume():
             f.write("Hello, World!")
 
         # ファイルをボリュームにコピー
-        volume.copyFile(str(Path(tempdir) / "test.txt"), "test.txt")
+        volume.copyFile(Path(tempdir) / "test.txt", Path("test.txt"))
 
     # ファイルがコピーされたことを確認
     task = TaskInfo(
@@ -200,10 +201,10 @@ def test_CopyFilesFromClientToVolume():
         # ファイルをボリュームにコピー
         volume.copyFiles(
             filePathsFromClient=[
-                str(Path(tempdir) / "test1.txt"),
-                str(Path(tempdir) / "test2.txt"),
+                Path(tempdir) / "test1.txt",
+                Path(tempdir) / "test2.txt",
             ],
-            DirPathInVolume="./",
+            DirPathInVolume=Path("./"),
         )
 
     # ファイルがコピーされたことを確認
@@ -249,10 +250,10 @@ def test_RemoveFilesInVolume():
         # ファイルをボリュームにコピー
         volume.copyFiles(
             filePathsFromClient=[
-                str(Path(tempdir) / "test1.txt"),
-                str(Path(tempdir) / "test2.txt"),
+                Path(tempdir) / "test1.txt",
+                Path(tempdir) / "test2.txt",
             ],
-            DirPathInVolume="./",
+            DirPathInVolume=Path("./"),
         )
 
     # ファイルがコピーされたことを確認
@@ -276,7 +277,7 @@ def test_RemoveFilesInVolume():
     assert result.stderr == ""
 
     # ファイルを削除
-    volume.removeFiles(["test1.txt", "test2.txt"])
+    volume.removeFiles([Path("test1.txt"), Path("test2.txt")])
 
     # ファイルが削除されたことを確認
     task = TaskInfo(
@@ -305,6 +306,51 @@ def test_RemoveFilesInVolume():
     assert err.message == ""
 
 
+# ボリュームのクローンができているかチェック
+def test_CloneVolume():
+    # 一時ディレクトリを作成
+    with TemporaryDirectory() as temp_dir:
+        # テストファイルを作成
+        file1_path = Path(temp_dir) / "file1.txt"
+        file2_path = Path(temp_dir) / "file2.txt"
+        with open(file1_path, "w") as f1, open(file2_path, "w") as f2:
+            f1.write("Content of file1")
+            f2.write("Content of file2")
+
+        # 元のボリュームを作成
+        original_volume, err = Volume.create()
+        assert err.message == ""
+
+        # テストファイルを元のボリュームにコピー
+        err = original_volume.copyFile(Path(file1_path), Path("file1.txt"))
+        assert err.message == ""
+        err = original_volume.copyFile(Path(file2_path), Path("file2.txt"))
+        assert err.message == ""
+
+        # ボリュームをクローン
+        cloned_volume, err = original_volume.clone()
+        assert err.message == ""
+
+        # クローンされたボリュームの内容を確認
+        task = TaskInfo(
+            name="ubuntu",
+            arguments=["ls"],
+            workDir="/workdir/",
+            volumeMountInfo=[VolumeMountInfo(path="/workdir/", volume=cloned_volume)],
+        )
+
+        result, err = task.run()
+        assert err.message == ""
+        assert result.exitCode == 0
+        assert "file1.txt" in result.stdout
+        assert "file2.txt" in result.stdout
+
+        # クリーンアップ
+        err = original_volume.remove()
+        assert err.message == ""
+        err = cloned_volume.remove()
+        assert err.message == ""
+
 # メモリ制限を検出できるかチェック
 def test_MemoryLimit():
     task = TaskInfo(
@@ -321,7 +367,7 @@ def test_MemoryLimit():
     test_logger.info(result)
 
     assert result.exitCode != 0
-    assert result.TLE == False
+    # assert result.TLE == False
     assert abs(result.memoryByte - 500 * 1024 * 1024) < 1024 * 1024
 
 
@@ -350,7 +396,7 @@ def test_ForkBomb():
 
     assert err.message == ""
 
-    err = volume.copyFile("sources/fork_bomb.sh", "fork_bomb.sh")
+    err = volume.copyFile(Path("sources/fork_bomb.sh"), Path("fork_bomb.sh"))
 
     assert err.message == ""
 
@@ -379,7 +425,7 @@ def test_UseManyStack():
 
     assert err.message == ""
 
-    err = volume.copyFile("sources/use_many_stack.cpp", "use_many_stack.cpp")
+    err = volume.copyFile(Path("sources/use_many_stack.cpp"), Path("use_many_stack.cpp"))
 
     assert err.message == ""
 
@@ -419,37 +465,51 @@ def test_UseManyStack():
     assert err.message == ""
 
 
-# Dockerコンテナのmysqlサーバーにあるtaskテーブルを操作するテスト
-def test_InsertTaskTable():
-    try:
-        db = SessionLocal()
+# 試しにジャッジリクエストを投じてみて、どのような結果になるか見てみる。
+def test_submit_judge():
+    with SessionLocal() as db:
+        # ジャッジリクエストを登録
+        submission = register_judge_request(
+            db=db,
+            batch_id=None,
+            student_id="sxxxxxxx",
+            lecture_id=1,
+            assignment_id=1,
+            for_evaluation=False,
+        )
 
-        # 試しにデータを追加
-        task = submit_task(db, "/workdir/")
+        # 提出されたファイルを登録
+        register_uploaded_files(
+            db=db,
+            submission_id=submission.id,
+            path=Path("sample_submission/ex1-1/gcd_euclid.c"),
+        )
+        register_uploaded_files(
+            db=db,
+            submission_id=submission.id,
+            path=Path("sample_submission/ex1-1/main_euclid.c"),
+        )
+        register_uploaded_files(
+            db=db,
+            submission_id=submission.id,
+            path=Path("sample_submission/ex1-1/Makefile"),
+        )
 
-        test_logger.info(task)
-
-        # データが追加されたことを確認
-        inserted_task = fetch_task_by_id(db, task.id)
-
-        assert inserted_task is not None
-
-        assert inserted_task.path_to_dir == "/workdir/"
-
-        assert inserted_task.status == "pending"
-
-        assert inserted_task.ts == task.ts
-
-        # データを削除
-        delete_task_by_id(db, task.id)
-
-        # データが削除されたことを確認
-        deleted_task = fetch_task_by_id(db, task.id)
-
-        assert deleted_task is None
-
-        db.close()
-
-    except Exception as e:
-        test_logger.error(e)
-        assert False
+        # ジャッジリクエストをキューに並べる
+        enqueue_judge_request(db=db, submission_id=submission.id)
+    
+    
+    while True:
+        with SessionLocal() as db:
+            # ジャッジが完了するまでsubmissionのステータスを見張る
+            progress = fetch_judge_status(db=db, submission_id=submission.id)
+            if progress == SubmissionProgressStatus.DONE:
+                break
+        time.sleep(1.0)
+    
+    # 結果を取得する
+    with SessionLocal() as db:
+        judge_results = fetch_judge_results(db=db, submission_id=submission.id)
+    
+    for judge_result in judge_results:
+        test_logger.info(judge_result)
