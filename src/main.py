@@ -60,17 +60,17 @@ async def process_judge_requests():
             with SessionLocal() as db:
                 num_available_workers = worker_pool.available_workers()
                 queued_submissions = fetch_queued_judge_and_change_status_to_running(db, num_available_workers)
-                if queued_submissions:
-                    logger.info(
-                        f"{len(queued_submissions)}件のジャッジリクエストを取得しました。"
-                    )
-                    # スレッドプールを使用して各ジャッジリクエストを処理
-                    for submission in queued_submissions:
-                        logger.info(f"submission: {submission}")
-                        logger.info("throw judge request to thread pool...")
-                        worker_pool.submit_job(f"submission-{submission.id}", process_one_judge_request, submission)
-                else:
-                    logger.info("キューにジャッジリクエストはありません。")
+            if queued_submissions:
+                logger.info(
+                    f"{len(queued_submissions)}件のジャッジリクエストを取得しました。"
+                )
+                # スレッドプールを使用して各ジャッジリクエストを処理
+                for submission in queued_submissions:
+                    logger.info(f"submission: {submission}")
+                    logger.info("throw judge request to thread pool...")
+                    worker_pool.submit_job(f"submission-{submission.id}", process_one_judge_request, submission)
+            else:
+                logger.info("キューにジャッジリクエストはありません。")
         except Exception as e:
             import traceback
             logger.error(f"例外が発生しました: {type(e).__name__}: {str(e)}")
