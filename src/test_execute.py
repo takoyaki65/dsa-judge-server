@@ -10,6 +10,7 @@ import logging
 from datetime import timedelta
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import time
 
 from db.crud import *
 from db.database import SessionLocal
@@ -464,37 +465,51 @@ def test_UseManyStack():
     assert err.message == ""
 
 
-# # Dockerコンテナのmysqlサーバーにあるtaskテーブルを操作するテスト
-# def test_InsertTaskTable():
-#     try:
-#         db = SessionLocal()
+# 試しにジャッジリクエストを投じてみて、どのような結果になるか見てみる。
+def test_submit_judge():
+    with SessionLocal() as db:
+        # ジャッジリクエストを登録
+        submission = register_judge_request(
+            db=db,
+            batch_id=None,
+            student_id="sxxxxxxx",
+            lecture_id=1,
+            assignment_id=1,
+            for_evaluation=False,
+        )
 
-#         # 試しにデータを追加
-#         task = submit_task(db, "/workdir/")
+        # 提出されたファイルを登録
+        register_uploaded_files(
+            db=db,
+            submission_id=submission.id,
+            path=Path("sample_submission/ex1-1/gcd_euclid.c"),
+        )
+        register_uploaded_files(
+            db=db,
+            submission_id=submission.id,
+            path=Path("sample_submission/ex1-1/main_euclid.c"),
+        )
+        register_uploaded_files(
+            db=db,
+            submission_id=submission.id,
+            path=Path("sample_submission/ex1-1/Makefile"),
+        )
 
-#         test_logger.info(task)
-
-#         # データが追加されたことを確認
-#         inserted_task = fetch_task_by_id(db, task.id)
-
-#         assert inserted_task is not None
-
-#         assert inserted_task.path_to_dir == "/workdir/"
-
-#         assert inserted_task.status == "pending"
-
-#         assert inserted_task.ts == task.ts
-
-#         # データを削除
-#         delete_task_by_id(db, task.id)
-
-#         # データが削除されたことを確認
-#         deleted_task = fetch_task_by_id(db, task.id)
-
-#         assert deleted_task is None
-
-#         db.close()
-
-#     except Exception as e:
-#         test_logger.error(e)
-#         assert False
+        # ジャッジリクエストをキューに並べる
+        enqueue_judge_request(db=db, submission_id=submission.id)
+    
+    
+    while True:
+        with SessionLocal() as db:
+            # ジャッジが完了するまでsubmissionのステータスを見張る
+            progress = fetch_judge_status(db=db, submission_id=submission.id)
+            if progress == SubmissionProgressStatus.DONE:
+                break
+        time.sleep(1.0)
+    
+    # 結果を取得する
+    with SessionLocal() as db:
+        judge_results = fetch_judge_results(db=db, submission_id=submission.id)
+    
+    for judge_result in judge_results:
+        test_logger.info(judge_result)
