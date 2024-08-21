@@ -200,8 +200,6 @@ class SingleJudgeStatus(Enum):
     
 @dataclass
 class JudgeResultRecord:
-    id: int = 1
-    ts: datetime = datetime(1998, 6, 6, 12, 32, 41)
     submission_id: int
     testcase_id: int
     timeMS: int
@@ -210,6 +208,8 @@ class JudgeResultRecord:
     stdout: str
     stderr: str
     result: SingleJudgeStatus
+    id: int = 1 # テーブルに挿入する際は自動設定されるので、コンストラクタで指定する必要が無いように適当な値を入れている
+    ts: datetime = datetime(1998, 6, 6, 12, 32, 41)
 
 # 特定のテストケースに対するジャッジ結果をJudgeResultテーブルに登録する
 def register_judge_result(db: Session, result: JudgeResultRecord) -> None:

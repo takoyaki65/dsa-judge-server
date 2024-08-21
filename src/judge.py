@@ -81,7 +81,6 @@ class JudgeInfo:
         )
         
         if problem_record is None:
-            db = SessionLocal()
             # Submissionテーブルのstatusをdoneに変更
             self.submission_record.progress = SubmissionProgressStatus.DONE
             # Submissionテーブルのmessageにエラー文を追加
@@ -89,6 +88,8 @@ class JudgeInfo:
             update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
             raise ValueError(self.submission_record.message)
+        else:
+            self.problem_record = problem_record
         
         test_logger.info(f"JudgeInfo.__init__: problem_record: {self.problem_record}")
 
@@ -190,9 +191,9 @@ class JudgeInfo:
         elif result.exitCode != testcase.exit_code:
             judge_result_record.result=SingleJudgeStatus.RE
         # Wrong Answerチェック
-        elif StandardChecker.check(
+        elif not StandardChecker.match(
             expected_stdout, result.stdout
-        ) and StandardChecker.check(expected_stderr, result.stderr):
+        ) or not StandardChecker.match(expected_stderr, result.stderr):
             judge_result_record.result=SingleJudgeStatus.WA
         else:
         # AC(正解)として登録
@@ -201,7 +202,7 @@ class JudgeInfo:
             db=db,
             result=judge_result_record
         )
-        return judge_result_record.result   
+        return JudgeSummaryStatus(judge_result_record.result.value)
             
     def _exec_checker(self, testcase_list: list[TestCaseRecord], initial_volume: Volume, container_name: str, timeoutSec: int, memoryLimitMB: int) -> JudgeSummaryStatus:
         db = SessionLocal()
@@ -262,9 +263,10 @@ class JudgeInfo:
             
             try:
                 # 引数をargに追加する
-                with open(RESOURCE_DIR / testcase.argument_path, "r", encoding='utf-8') as f:
-                    arguments = f.read().strip().split()
-                    args.extend(arguments)
+                if testcase.argument_path is not None:
+                    with open(RESOURCE_DIR / testcase.argument_path, "r", encoding='utf-8') as f:
+                        arguments = f.read().strip().split()
+                        args.extend(arguments)
                     
                 # stdin, expected_stdout, expected_stderrを読み込む
                 if testcase.stdin_path is not None:
@@ -409,6 +411,8 @@ class JudgeInfo:
             update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
             return Error.Nothing()
+        else:
+            self.submission_record.postbuilt_result = JudgeSummaryStatus.AC
         
         # 4. ジャッジを行う
         # チェッカーを走らせる
