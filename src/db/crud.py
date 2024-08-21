@@ -39,7 +39,7 @@ class SubmissionRecord:
     lecture_id: int
     assignment_id: int
     for_evaluation: bool
-    status: SubmissionProgressStatus
+    progress: SubmissionProgressStatus
     prebuilt_result: JudgeSummaryStatus
     postbuilt_result: JudgeSummaryStatus
     judge_result: JudgeSummaryStatus
@@ -51,10 +51,10 @@ def fetch_queued_judge_and_change_status_to_running(db: Session, n: int) -> list
     logger.info("fetch_queued_judgeが呼び出されました")
     try:
         # FOR UPDATE NOWAITを使用して排他的にロックを取得
-        submission_list = db.query(models.Submission).filter(models.Submission.status == 'queued').with_for_update(nowait=True).limit(n).all()
+        submission_list = db.query(models.Submission).filter(models.Submission.progress == 'queued').with_for_update(nowait=True).limit(n).all()
         
         for submission in submission_list:
-            submission.status = 'running'
+            submission.progress = 'running'
         
         db.commit()
         return [
@@ -66,7 +66,7 @@ def fetch_queued_judge_and_change_status_to_running(db: Session, n: int) -> list
                 lecture_id=submission.lecture_id,
                 assignment_id=submission.assignment_id,
                 for_evaluation=submission.for_evaluation,
-                status=SubmissionProgressStatus(submission.status),
+                progress=SubmissionProgressStatus(submission.progress),
                 prebuilt_result=JudgeSummaryStatus(submission.prebuilt_result),
                 postbuilt_result=JudgeSummaryStatus(submission.postbuilt_result),
                 judge_result=JudgeSummaryStatus(submission.judge_result),
@@ -238,7 +238,7 @@ def update_submission_record(db: Session, submission_record: SubmissionRecord) -
     # assert raw_submission_record.batch_id == submission_record.batch_id
     # assert raw_submission_record.student_id == submission_record.student_id
     # assert raw_submission_record.for_evaluation == submission_record.for_evaluation
-    raw_submission_record.status = submission_record.status.value
+    raw_submission_record.progress = submission_record.progress.value
     raw_submission_record.prebuilt_result = submission_record.prebuilt_result.value
     raw_submission_record.postbuilt_result = submission_record.postbuilt_result.value
     raw_submission_record.judge_result = submission_record.judge_result.value
@@ -252,13 +252,13 @@ def update_submission_record(db: Session, submission_record: SubmissionRecord) -
 def undo_running_submissions(db: Session) -> None:
     logger.info("call undo_running_submissions")
     # 1. "running"状態のSubmissionを全て取得
-    running_submissions = db.query(models.Submission).filter(models.Submission.status == "running").all()
+    running_submissions = db.query(models.Submission).filter(models.Submission.progress == "running").all()
     
     submission_id_list = [submission.id for submission in running_submissions]
     
     # すべてのrunning submissionのstatusを"queued"に変更
     for submission in running_submissions:
-        submission.status = "queued"
+        submission.progress = "queued"
     
     db.commit()
     
@@ -292,7 +292,7 @@ def register_judge_request(db: Session, batch_id: int | None, student_id: str, l
         lecture_id=new_submission.lecture_id,
         assignment_id=new_submission.assignment_id,
         for_evaluation=new_submission.for_evaluation,
-        status=SubmissionProgressStatus(new_submission.status),
+        progress=SubmissionProgressStatus(new_submission.progress),
         prebuilt_result=JudgeSummaryStatus(new_submission.prebuilt_result),
         postbuilt_result=JudgeSummaryStatus(new_submission.postbuilt_result),
         judge_result=JudgeSummaryStatus(new_submission.postbuilt_result),
@@ -316,7 +316,7 @@ def enqueue_judge_request(db: Session, submission_id: int) -> None:
     pending_submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     
     if pending_submission is not None:
-        pending_submission.status = 'queued'
+        pending_submission.progress = 'queued'
         db.commit()
     else:
         raise ValueError(f"Submission with id {submission_id} not found")
@@ -327,7 +327,7 @@ def fetch_judge_status(db: Session, submission_id: int) -> str:
     submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     if submission is None:
         raise ValueError(f"Submission with {submission_id} not found")
-    return submission.status
+    return submission.progress
 
 # 特定のジャッジリクエストに紐づいたジャッジ結果を取得する
 def fetch_judge_results(db: Session, submission_id: int) -> list[JudgeResultRecord]:

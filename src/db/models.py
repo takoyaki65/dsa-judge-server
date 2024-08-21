@@ -81,7 +81,7 @@ class Submission(Base):
     lecture_id = Column(Integer, ForeignKey('Problem.lecture_id'), nullable=False)
     assignment_id = Column(Integer, ForeignKey('Problem.assignment_id'), nullable=False)
     for_evaluation = Column(Boolean, ForeignKey('Problem.for_evaluation'), nullable=False)
-    status = Column(Enum('pending', 'queued', 'running', 'done'), default='pending')
+    progress = Column(Enum('pending', 'queued', 'running', 'done'), default='pending')
     prebuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
     postbuilt_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')
     judge_result = Column(Enum('Unprocessed', 'AC', 'WA', 'TLE', 'MLE', 'CE', 'RE', 'OLE', 'IE'), default='Unprocessed')

@@ -83,7 +83,7 @@ class JudgeInfo:
         if problem_record is None:
             db = SessionLocal()
             # Submissionテーブルのstatusをdoneに変更
-            self.submission_record.status = SubmissionProgressStatus.DONE
+            self.submission_record.progress = SubmissionProgressStatus.DONE
             # Submissionテーブルのmessageにエラー文を追加
             self.submission_record.message = f"Error on Problem {self.lecture_id}-{self.assignment_id}:{self.for_evaluation}: Not found"
             update_submission_record(db=db, submission_record=self.submission_record)
@@ -378,7 +378,7 @@ class JudgeInfo:
         if prebuilt_result is not JudgeSummaryStatus.AC:
             # 早期終了
             db = SessionLocal()
-            self.submission_record.status = SubmissionProgressStatus.DONE
+            self.submission_record.progress = SubmissionProgressStatus.DONE
             self.submission_record.prebuilt_result = prebuilt_result
             update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
@@ -392,7 +392,7 @@ class JudgeInfo:
         if not err.silence():
             # 早期終了
             db = SessionLocal()
-            self.submission_record.status = SubmissionProgressStatus.DONE
+            self.submission_record.progress = SubmissionProgressStatus.DONE
             self.submission_record.postbuilt_result = JudgeSummaryStatus.CE
             update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
@@ -404,7 +404,7 @@ class JudgeInfo:
         if postbuilt_result is not JudgeSummaryStatus.AC:
             # 早期終了
             db = SessionLocal()
-            self.submission_record.status = SubmissionProgressStatus.DONE
+            self.submission_record.progress = SubmissionProgressStatus.DONE
             self.submission_record.postbuilt_result = postbuilt_result
             update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
@@ -421,7 +421,7 @@ class JudgeInfo:
         
         # ジャッジ結果を登録
         db = SessionLocal()
-        self.submission_record.status = SubmissionProgressStatus.DONE
+        self.submission_record.progress = SubmissionProgressStatus.DONE
         self.submission_record.judge_result = judge_result
         update_submission_record(db=db, submission_record=self.submission_record)
         db.close()
