@@ -200,8 +200,8 @@ class SingleJudgeStatus(Enum):
     
 @dataclass
 class JudgeResultRecord:
-    id: int
-    ts: datetime
+    id: int = 1
+    ts: datetime = datetime(1998, 6, 6, 12, 32, 41)
     submission_id: int
     testcase_id: int
     timeMS: int

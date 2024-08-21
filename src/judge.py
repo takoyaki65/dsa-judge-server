@@ -9,19 +9,7 @@ from sandbox.execute import TaskResult
 from dotenv import load_dotenv
 from db.models import TestCases, Problem
 import logging
-from db.crud import (
-    update_submission_status,
-    update_submission_message,
-    update_submission_prebuilt_result,
-    update_submission_postbuilt_result,
-    update_submission_judge_result,
-    register_judge_result,
-    fetch_problem,
-    fetch_required_files,
-    fetch_arranged_filepaths,
-    fetch_testcases,
-    fetch_uploaded_filepaths,
-)
+from db.crud import *
 from db.database import SessionLocal
 from checker import StandardChecker
 import os
@@ -35,72 +23,33 @@ load_dotenv()
 
 RESOURCE_DIR = Path(os.getenv("RESOURCE_PATH"))
 
-
-class JudgeStatusFlag(Enum):
-    AC = "AC"  # 正解 (Accepted)
-    WA = "WA"  # 不正解 (Wrong Answer)
-    TLE = "TLE"  # 制限時間超過 (Time Limit Exceeded)
-    MLE = "MLE"  # メモリー超過 (Memory Limit Exceeded)
-    CE = "CE"  # コンパイルエラー (Compile Error)
-    RE = "RE"  # 実行時エラー (Runtime Error)
-    OLE = "OLE"  # 出力サイズ超過 (Output Limit Exceeded)
-    IE = "IE"  # ジャッジサーバの内部エラー (Internal Error)
-
-    def __str__(self):
-        return self.value
-
-
 StatusOrder = {
-    "AC": 1,
-    "WA": 2,
-    "TLE": 3,
-    "MLE": 4,
-    "RE": 5,
-    "CE": 6,
-    "OLE": 7,
-    "IE": 8,
+    JudgeSummaryStatus.UNPROCESSED: 0,
+    JudgeSummaryStatus.AC: 1,
+    JudgeSummaryStatus.WA: 2,
+    JudgeSummaryStatus.TLE: 3,
+    JudgeSummaryStatus.MLE: 4,
+    JudgeSummaryStatus.RE: 5,
+    JudgeSummaryStatus.CE: 6,
+    JudgeSummaryStatus.OLE: 7,
+    JudgeSummaryStatus.IE: 8,
 }
 
 
-class JudgeStatus:
-    flag: JudgeStatusFlag
+class JudgeSummaryStatusAggregator:
+    flag: JudgeSummaryStatus
 
-    def __init__(self, flag: JudgeStatusFlag):
+    def __init__(self, flag: JudgeSummaryStatus):
         self.flag = flag
 
-    def update(self, flag: JudgeStatusFlag) -> None:
-        if StatusOrder[self.flag.__str__()] < StatusOrder[flag.__str__()]:
+    def update(self, flag: JudgeSummaryStatus) -> None:
+        if StatusOrder[self.flag] < StatusOrder[flag]:
             self.flag = flag
 
-
-@dataclass
-class JudgeResult:
-    testcase_id: int
-    status: JudgeStatusFlag
-    timeMS: int
-    memoryKB: int
-    exitCode: int
-    stdout: str
-    stderr: str
-
-
-@dataclass
-class ProblemInfo:
-    lecture_id: int
-    assignment_id: int
-    for_evaluation: bool
-    timeMS: int
-    memoryMB: int
-    build_script_path: str
-    executable: str
-
-
 class JudgeInfo:
-    submission_id: int
-    lecture_id: int
-    assignment_id: int
-    for_evaluation: bool
-    problem_record: ProblemInfo  # Problemテーブル内のテーブルレコード
+    submission_record: SubmissionRecord # Submissionテーブル内のジャッジリクエストレコード
+    
+    problem_record: ProblemRecord  # Problemテーブル内のテーブルレコード
 
     required_files: list[str]  # ユーザに提出を求められているソースコードの名前リスト
     arranged_filepaths: list[
@@ -108,67 +57,47 @@ class JudgeInfo:
     ]  # こちらが用意しているソースコードのファイルパスのリスト
     uploaded_filepaths: list[Path]  # ユーザが提出したソースコードのファイルパスのリスト
 
-    entire_status: JudgeStatus  # テストケース全体のジャッジ結果
+    entire_status: JudgeSummaryStatusAggregator  # テストケース全体のジャッジ結果
 
-    prebuilt_testcases: list[TestCases]
+    prebuilt_testcases: list[TestCaseRecord]
 
-    postbuilt_testcases: list[TestCases]
+    postbuilt_testcases: list[TestCaseRecord]
 
-    judge_testcases: list[TestCases]
+    judge_testcases: list[TestCaseRecord]
 
     def __init__(
         self,
-        submission_id: int,
-        lecture_id: int,
-        assignment_id: int,
-        for_evaluation: bool,
+        submission: SubmissionRecord
     ):
-        self.submission_id = submission_id
-        self.lecture_id = lecture_id
-        self.assignment_id = assignment_id
-        self.for_evaluation = for_evaluation
+        self.submission_record = submission
 
         db = SessionLocal()
         
-        raw_problem_record = fetch_problem(
+        problem_record = fetch_problem(
             db=db,
-            lecture_id=lecture_id,
-            assignment_id=assignment_id,
-            for_evaluation=for_evaluation,
+            lecture_id=self.submission_record.lecture_id,
+            assignment_id=self.submission_record.assignment_id,
+            for_evaluation=self.submission_record.for_evaluation,
         )
         
-        if raw_problem_record is None:
-            # Submissionテーブルのstatusをdoneに変更
+        if problem_record is None:
             db = SessionLocal()
-            update_submission_status(
-                db=db, submission_id=self.submission_id, status="done"
-            )
+            # Submissionテーブルのstatusをdoneに変更
+            self.submission_record.status = SubmissionProgressStatus.DONE
             # Submissionテーブルのmessageにエラー文を追加
-            error_message = f"Error on Problem {self.lecture_id}-{self.assignment_id}:{self.for_evaluation}: Not found"
-            update_submission_message(
-                db=db, submission_id=self.submission_id, message=error_message
-            )
+            self.submission_record.message = f"Error on Problem {self.lecture_id}-{self.assignment_id}:{self.for_evaluation}: Not found"
+            update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
-            raise ValueError(error_message)
-        
-        self.problem_record = ProblemInfo(
-            lecture_id=raw_problem_record.lecture_id,
-            assignment_id=raw_problem_record.assignment_id,
-            for_evaluation=raw_problem_record.for_evaluation,
-            timeMS=raw_problem_record.timeMS,
-            memoryMB=raw_problem_record.memoryMB,
-            build_script_path=raw_problem_record.build_script_path,
-            executable=raw_problem_record.executable
-        )
+            raise ValueError(self.submission_record.message)
         
         test_logger.info(f"JudgeInfo.__init__: problem_record: {self.problem_record}")
 
         # Get required file names
         self.required_files = fetch_required_files(
             db=db,
-            lecture_id=lecture_id,
-            assignment_id=assignment_id,
-            for_evaluation=for_evaluation,
+            lecture_id=self.submission_record.lecture_id,
+            assignment_id=self.submission_record.assignment_id,
+            for_evaluation=self.submission_record.for_evaluation,
         )
         
         test_logger.info(f"JudgeInfo.__init__: required_files: {self.required_files}")
@@ -178,9 +107,9 @@ class JudgeInfo:
             RESOURCE_DIR / filepath
             for filepath in fetch_arranged_filepaths(
                 db=db,
-                lecture_id=lecture_id,
-                assignment_id=assignment_id,
-                for_evaluation=for_evaluation,
+                lecture_id=self.submission_record.lecture_id,
+                assignment_id=self.submission_record.assignment_id,
+                for_evaluation=self.submission_record.for_evaluation,
             )
         ]
         
@@ -189,7 +118,7 @@ class JudgeInfo:
         # Get uploaded filepaths
         self.uploaded_filepaths = [
             RESOURCE_DIR / filepath
-            for filepath in fetch_uploaded_filepaths(db=db, submission_id=submission_id)
+            for filepath in fetch_uploaded_filepaths(db=db, submission_id=self.submission_record.id)
         ]
         
         test_logger.info(f"JudgeInfo.__init__: uploaded_filepaths: {self.uploaded_filepaths}")
@@ -197,9 +126,9 @@ class JudgeInfo:
         # Get testcases info
         testcases = fetch_testcases(
             db=db,
-            lecture_id=lecture_id,
-            assignment_id=assignment_id,
-            for_evaluation=for_evaluation,
+            lecture_id=self.submission_record.lecture_id,
+            assignment_id=self.submission_record.assignment_id,
+            for_evaluation=self.submission_record.for_evaluation,
         )
 
         self.prebuilt_testcases = []
@@ -208,14 +137,14 @@ class JudgeInfo:
 
         # prebuilt, postbuilt, judgeの種類ごとにtestcasesを分ける
         for testcase in testcases:
-            if testcase.type == "preBuilt":
+            if testcase.type == TestCaseType.preBuilt:
                 self.prebuilt_testcases.append(testcase)
-            elif testcase.type == "postBuilt":
+            elif testcase.type == TestCaseType.postBuilt:
                 self.postbuilt_testcases.append(testcase)
-            else:
+            else: # testcase.type == TestCaseType.Judge
                 self.judge_testcases.append(testcase)
 
-        self.entire_status = JudgeStatus(JudgeStatusFlag.AC)
+        self.entire_status = JudgeSummaryStatusAggregator(JudgeSummaryStatus.AC)
         db.close()
 
     def _create_complete_volume(self) -> tuple[Volume, Error]:
@@ -236,108 +165,65 @@ class JudgeInfo:
     def _result_check_and_register(
         self,
         db: Session,
-        testcase: TestCases,
+        testcase: TestCaseRecord,
         result: TaskResult,
         expected_stdout: str,
         expected_stderr: str,
-    ) -> JudgeStatus:
-        status: JudgeStatus = JudgeStatus(JudgeStatusFlag.AC)
+    ) -> JudgeSummaryStatus:
+        judge_result_record = JudgeResultRecord(
+            submission_id=self.submission_record.id,
+            testcase_id=testcase.id,
+            timeMS=result.timeMS,
+            memoryKB=result.memoryByte / 1024,
+            exit_code=result.exitCode,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            result=SingleJudgeStatus.AC
+        )
         # TLEチェック
         if result.TLE:
-            register_judge_result(
-                db=db,
-                submission_id=self.submission_id,
-                testcase_id=testcase.id,
-                timeMS=result.timeMS,
-                memoryKB=result.memoryByte / 1024,
-                exit_code=result.exitCode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                result="TLE",
-            )
-            status.update(JudgeStatusFlag.TLE)
-            return status
+            judge_result_record.result=SingleJudgeStatus.TLE
         # MLEチェック
         elif result.memoryByte + 1024 * 1024 > 512 * 1024 * 1024:
-            register_judge_result(
-                db=db,
-                submission_id=self.submission_id,
-                testcase_id=testcase.id,
-                timeMS=result.timeMS,
-                memoryKB=result.memoryByte / 1024,
-                exit_code=result.exitCode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                result="MLE",
-            )
-            status.update(JudgeStatusFlag.MLE)
-            return status
+            judge_result_record.result=SingleJudgeStatus.MLE
         # RE(Runtime Errorチェック)
         elif result.exitCode != testcase.exit_code:
-            register_judge_result(
-                db=db,
-                submission_id=self.submission_id,
-                testcase_id=testcase.id,
-                timeMS=result.timeMS,
-                memoryKB=result.memoryByte / 1024,
-                exit_code=result.exitCode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                result="RE",
-            )
-            status.update(JudgeStatusFlag.RE)
-            return status
+            judge_result_record.result=SingleJudgeStatus.RE
         # Wrong Answerチェック
         elif StandardChecker.check(
             expected_stdout, result.stdout
         ) and StandardChecker.check(expected_stderr, result.stderr):
-            register_judge_result(
-                db=db,
-                submission_id=self.submission_id,
-                testcase_id=testcase.id,
-                timeMS=result.timeMS,
-                memoryKB=result.memoryByte / 1024,
-                exit_code=result.exitCode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                result="AC",
-            )
-            status.update(JudgeStatusFlag.AC)
-            return status
+            judge_result_record.result=SingleJudgeStatus.WA
         else:
-            register_judge_result(
-                db=db,
-                submission_id=self.submission_id,
-                testcase_id=testcase.id,
-                timeMS=result.timeMS,
-                memoryKB=result.memoryByte / 1024,
-                exit_code=result.exitCode,
-                stdout=result.stdout,
-                stderr=result.stderr,
-                result="WA",
-            )
-            status.update(JudgeStatusFlag.WA)
-            return status
-    
-    def _exec_checker(self, testcase_list: list[TestCases], initial_volume: Volume, container_name: str, timeoutSec: int, memoryLimitMB: int) -> JudgeStatus:
+        # AC(正解)として登録
+            judge_result_record.result=SingleJudgeStatus.AC
+        register_judge_result(
+            db=db,
+            result=judge_result_record
+        )
+        return judge_result_record.result   
+            
+    def _exec_checker(self, testcase_list: list[TestCaseRecord], initial_volume: Volume, container_name: str, timeoutSec: int, memoryLimitMB: int) -> JudgeSummaryStatus:
         db = SessionLocal()
-        summary_status: JudgeStatus = JudgeStatus(JudgeStatusFlag.AC)
+        status_aggregator: JudgeSummaryStatusAggregator = JudgeSummaryStatusAggregator(JudgeSummaryStatus.AC)
         for testcase in testcase_list:
             # ボリューム作成
             volume, err = initial_volume.clone()
             if not err.silence():
                 register_judge_result(
                     db=db,
-                    submission_id=self.submission_id,
-                    testcase_id=testcase.id,
-                    timeMS=0,
-                    memoryKB=0,
-                    exit_code=-1,
-                    stdout="",
-                    stderr=err.message,
-                    result="IE"
+                    result=JudgeResultRecord(
+                        submission_id=self.submission_record.id,
+                        testcase_id=testcase.id,
+                        timeMS=0,
+                        memoryKB=0,
+                        exit_code=-1,
+                        stdout='',
+                        stderr=err.message,
+                        result=SingleJudgeStatus.IE
+                    )
                 )
-                summary_status.update(JudgeStatusFlag.IE)
+                status_aggregator.update(JudgeSummaryStatus.IE)
                 continue
             
             args = []
@@ -350,6 +236,21 @@ class JudgeInfo:
                 )
                 if not err.silence():
                     test_logger.info(f"err occured when copying script file: {err}")
+                    register_judge_result(
+                        db=db,
+                        result=JudgeResultRecord(
+                            submission_id=self.submission_record.id,
+                            testcase_id=testcase.id,
+                            timeMS=0,
+                            memoryKB=0,
+                            exit_code=-1,
+                            stdout='',
+                            stderr=err.message,
+                            result=SingleJudgeStatus.IE
+                        )
+                    )
+                    status_aggregator.update(JudgeSummaryStatus.IE)
+                    continue
                 args = [f"./{Path(testcase.script_path).name}"]
             else:
                 # そうでないなら通常のexecutableをargsに追加
@@ -387,16 +288,18 @@ class JudgeInfo:
             except FileNotFoundError as e:
                 register_judge_result(
                     db=db,
-                    submission_id=self.submission_id,
-                    testcase_id=testcase.id,
-                    timeMS=0,
-                    memoryKB=0,
-                    exit_code=-1,
-                    stdout="",
-                    stderr=f"ファイルが見つかりません: {e.filename}",
-                    result="IE",
+                    result=JudgeResultRecord(
+                        submission_id=self.submission_record.id,
+                        testcase_id=testcase.id,
+                        timeMS=0,
+                        memoryKB=0,
+                        exit_code=-1,
+                        stdout='',
+                        stderr=err.message,
+                        result=SingleJudgeStatus.IE
+                    )
                 )
-                summary_status.update(JudgeStatusFlag.IE)
+                status_aggregator.update(JudgeSummaryStatus.IE)
                 # ボリュームを削除
                 err = volume.remove()
                 if not err.silence():
@@ -430,10 +333,10 @@ class JudgeInfo:
             if not err.silence():
                 test_logger.info(f"failed to remove volume: {volume.name}")
             
-            summary_status.update(status)
+            status_aggregator.update(status)
         
         db.close()
-        return summary_status
+        return status_aggregator.flag
 
     def _compile(self, working_volume: Volume, container_name: str) -> Error:
         # コンパイルコマンドの取得
@@ -471,18 +374,17 @@ class JudgeInfo:
         if not err.silence():
             return err
         # チェッカーを走らせる
-        status = self._exec_checker(testcase_list=self.prebuilt_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=2, memoryLimitMB=512)
-        if status.flag is not JudgeStatusFlag.AC:
+        prebuilt_result = self._exec_checker(testcase_list=self.prebuilt_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=2, memoryLimitMB=512)
+        if prebuilt_result is not JudgeSummaryStatus.AC:
             # 早期終了
             db = SessionLocal()
-            update_submission_status(
-                db=db, submission_id=self.submission_id, status="done"
-            )
-            update_submission_prebuilt_result(
-                db=db, submission_id=self.submission_id, prebuilt_result=status.flag.value
-            )
+            self.submission_record.status = SubmissionProgressStatus.DONE
+            self.submission_record.prebuilt_result = prebuilt_result
+            update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
             return Error.Nothing()
+        else:
+            self.submission_record.prebuilt_result = JudgeSummaryStatus.AC
         
         # 2. コンパイルを行う
         err = self._compile(working_volume=working_volume, container_name="checker-lang-gcc")
@@ -490,33 +392,27 @@ class JudgeInfo:
         if not err.silence():
             # 早期終了
             db = SessionLocal()
-            update_submission_status(
-                db=db, submission_id=self.submission_id, status="done"
-            )
-            update_submission_postbuilt_result(
-                db=db, submission_id=self.submission_id, postbuilt_result="CE"
-            )
+            self.submission_record.status = SubmissionProgressStatus.DONE
+            self.submission_record.postbuilt_result = JudgeSummaryStatus.CE
+            update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
             return Error.Nothing()
         
         # 3. コンパイル後のチェックを行う
         # チェッカーを走らせる
-        status = self._exec_checker(testcase_list=self.postbuilt_testcases, initial_volume=working_volume, container_name="checker-lang-gcc", timeoutSec=2, memoryLimitMB=512)
-        if status.flag is not JudgeStatusFlag.AC:
+        postbuilt_result = self._exec_checker(testcase_list=self.postbuilt_testcases, initial_volume=working_volume, container_name="checker-lang-gcc", timeoutSec=2, memoryLimitMB=512)
+        if postbuilt_result is not JudgeSummaryStatus.AC:
             # 早期終了
             db = SessionLocal()
-            update_submission_status(
-                db=db, submission_id=self.submission_id, status="done"
-            )
-            update_submission_postbuilt_result(
-                db=db, submission_id=self.submission_id, postbuilt_result=status.flag.value
-            )
+            self.submission_record.status = SubmissionProgressStatus.DONE
+            self.submission_record.postbuilt_result = postbuilt_result
+            update_submission_record(db=db, submission_record=self.submission_record)
             db.close()
             return Error.Nothing()
         
         # 4. ジャッジを行う
         # チェッカーを走らせる
-        status = self._exec_checker(testcase_list=self.judge_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=self.problem_record.timeMS / 1000, memoryLimitMB=self.problem_record.memoryMB)
+        judge_result = self._exec_checker(testcase_list=self.judge_testcases, initial_volume=working_volume, container_name="binary-runner", timeoutSec=self.problem_record.timeMS / 1000, memoryLimitMB=self.problem_record.memoryMB)
         
         # ボリュームを削除
         err = working_volume.remove()
@@ -525,11 +421,8 @@ class JudgeInfo:
         
         # ジャッジ結果を登録
         db = SessionLocal()
-        update_submission_judge_result(
-            db=db, submission_id=self.submission_id, status="done"
-        )
-        update_submission_judge_result(
-            db=db, submission_id=self.submission_id, judge_result=status.flag.value
-        )
+        self.submission_record.status = SubmissionProgressStatus.DONE
+        self.submission_record.judge_result = judge_result
+        update_submission_record(db=db, submission_record=self.submission_record)
         db.close()
         return Error.Nothing()

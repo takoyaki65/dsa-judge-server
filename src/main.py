@@ -14,14 +14,9 @@ logger = logging.getLogger("uvicorn")
 
 thread_pool = ThreadPoolExecutor(max_workers=50)
 
-def process_one_judge_request(submission_id: int, lecture_id: int, assignment_id: int, for_evaluation: bool) ->None:
-    logger.info(f"JudgeInfo(submission_id={submission_id}, lecture_id={lecture_id}, assignment_id={assignment_id}, for_evaluation={for_evaluation}) will be created...")
-    judge_info = JudgeInfo(
-        submission_id=submission_id,
-        lecture_id=lecture_id,
-        assignment_id=assignment_id,
-        for_evaluation=for_evaluation,
-    )
+def process_one_judge_request(submission: SubmissionRecord) ->None:
+    logger.info(f"JudgeInfo(submission_id={submission.id}, lecture_id={submission.lecture_id}, assignment_id={submission.assignment_id}, for_evaluation={submission.for_evaluation}) will be created...")
+    judge_info = JudgeInfo(submission)
     logger.info("START JUDGE...")
     err = judge_info.judge()
     logger.info(f"JUDGE ERROR: \"{err}\"")
@@ -34,16 +29,16 @@ async def process_judge_requests():
     while True:
         try:
             with SessionLocal() as db:
-                queued_submissions = fetch_queued_judge(db, 10)  # 10件ずつ取得
+                queued_submissions = fetch_queued_judge_and_change_status_to_running(db, 10)  # 10件ずつ取得
                 if queued_submissions:
                     logger.info(
                         f"{len(queued_submissions)}件のジャッジリクエストを取得しました。"
                     )
                     # スレッドプールを使用して各ジャッジリクエストを処理
                     for submission in queued_submissions:
-                        # logger.info(f"submission: [id: {submission.id}, ts: {submission.ts}, batch_id: {submission.batch_id}, student_id: {submission.student_id}, assignment_id: {submission.assignment_id}, for_evaluation: {submission.for_evaluation}]")
+                        logger.info(f"submission: {submission}")
                         logger.info("throw judge request to thread pool...")
-                        thread_pool.submit(process_one_judge_request, submission.id, submission.lecture_id, submission.assignment_id, submission.for_evaluation)
+                        thread_pool.submit(process_one_judge_request, submission)
                 else:
                     logger.info("キューにジャッジリクエストはありません。")
         except Exception as e:
