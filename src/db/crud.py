@@ -322,12 +322,12 @@ def enqueue_judge_request(db: Session, submission_id: int) -> None:
         raise ValueError(f"Submission with id {submission_id} not found")
 
 # Submissionテーブルのジャッジリクエストのstatusを確認する
-def fetch_judge_status(db: Session, submission_id: int) -> str:
+def fetch_judge_status(db: Session, submission_id: int) -> SubmissionProgressStatus:
     logger.info("call fetch_judge_status")
     submission = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     if submission is None:
         raise ValueError(f"Submission with {submission_id} not found")
-    return submission.progress
+    return SubmissionProgressStatus(submission.progress)
 
 # 特定のジャッジリクエストに紐づいたジャッジ結果を取得する
 def fetch_judge_results(db: Session, submission_id: int) -> list[JudgeResultRecord]:
